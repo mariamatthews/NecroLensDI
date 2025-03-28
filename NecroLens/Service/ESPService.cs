@@ -1,46 +1,61 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
-using System.Threading;
-using System.Threading.Tasks;
+using SystemTask = System.Threading.Tasks.Task;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using ImGuiNET;
+using NecroLens.Interface;
 using NecroLens.Model;
 using NecroLens.util;
 using static NecroLens.util.ESPUtils;
 
+
 namespace NecroLens.Service;
 
-[SuppressMessage("ReSharper", "InconsistentNaming")]
 public class ESPService : IDisposable
 {
-    private const ushort Tick = 250;
+    private readonly ILoggingService logger;
+    private readonly IClientState clientState;
+    private readonly Configuration configuration;
+    private readonly IObjectTable objectTable;
+    private readonly IDeepDungeonService deepDungeonService;
+    private readonly IFramework framework;
+    private readonly IMobInfoService mobInfoService;
+    private readonly IGameGui gameGui;
 
     private readonly List<ESPObject> mapObjects = new List<ESPObject>();
-    private readonly Task mapScanner = Task.CompletedTask;
-    private bool active;
+    private readonly SystemTask mapScanner;
 
-    public ESPService()
+    public ESPService(ILoggingService logger,
+        Configuration configuration,
+        IMainUIManager mainUIManager,
+        IClientState clientState,
+        IObjectTable objectTable,
+        IDeepDungeonService deepDungeonService,
+        IFramework framework,
+        IMobInfoService mobInfoService,
+        IGameGui gameGui)
     {
         try
         {
-            NecroLens.PluginLog.Debug("ESP Service loading...");
+            this.logger = logger;
+            logger.LogDebug("ESP Service loading...");
+            this.clientState = clientState;
+            this.objectTable = objectTable;
+            this.deepDungeonService = deepDungeonService;
+            this.configuration = configuration;
+            this.framework = framework;
+            this.mobInfoService = mobInfoService;
+            this.gameGui = gameGui;
 
-            active = true;
-
-            NecroLens.PluginInterface.UiBuilder.Draw += OnUpdate;
-            NecroLens.ClientState.TerritoryChanged += OnCleanup;
-
-            // Enable Scanner
-            mapScanner = Task.Run(MapScanner);
+            //NecroLens.PluginInterface.UiBuilder.Draw += OnDraw;
         }
         catch (Exception e)
         {
-            NecroLens.PluginLog.Error(e.ToString());
+            logger.LogError(e.ToString());
         }
     }
 
@@ -48,16 +63,24 @@ public class ESPService : IDisposable
     {
         try
         {
-            NecroLens.PluginInterface.UiBuilder.Draw -= OnUpdate;
-            NecroLens.ClientState.TerritoryChanged -= OnCleanup;
-            active = false;
-            while (!mapScanner.IsCompleted) NecroLens.PluginLog.Debug("wait till scanner is stopped...");
+            NecroLens.PluginInterface.UiBuilder.Draw -= OnDraw;
+            clientState.TerritoryChanged -= OnCleanup;
+            while (!mapScanner.IsCompleted) logger.LogDebug("wait till scanner is stopped...");
             mapObjects.Clear();
-            NecroLens.PluginLog.Information("ESP Service unloaded");
+
+            // Dispose of the services
+            deepDungeonService?.Dispose();
+            mobInfoService?.Dispose();
+
+            logger.LogInformation("ESP Service unloaded");
         }
         catch (Exception e)
         {
-            NecroLens.PluginLog.Error(e.ToString());
+            logger.LogError(e.ToString());
+        }
+        finally
+        {
+            GC.SuppressFinalize(this);
         }
     }
 
@@ -76,49 +99,55 @@ public class ESPService : IDisposable
         }
         catch (Exception ex)
         {
-            NecroLens.PluginLog.Error(ex.ToString());
+            logger.LogError(ex.ToString());
         }
     }
 
     /**
      * Main-Drawing method.
      */
-    private void OnUpdate()
+    public void OnDraw()
     {
         try
         {
+            // Always draw every frame:
             if (ShouldDraw())
             {
-                if (!Monitor.TryEnter(mapObjects)) return;
+                lock (mapObjects)
+                {
+                    // For debugging
+                    // logger.LogVerbose($"OnDraw(): Rendering {mapObjects.Count} objects.");
 
-                var drawList = ImGui.GetBackgroundDrawList();
-                foreach (var gameObject in mapObjects) DrawEspObject(drawList, gameObject);
-
-                Monitor.Exit(mapObjects);
+                    var drawList = ImGui.GetBackgroundDrawList();
+                    foreach (var gameObject in mapObjects)
+                    {
+                        DrawEspObject(drawList, gameObject);
+                    }
+                }
             }
         }
         catch (Exception e)
         {
-            NecroLens.PluginLog.Error(e.ToString());
+            logger.LogError(e.ToString());
         }
     }
 
-    private bool DoDrawName(ESPObject espObject)
+    private bool DoDrawName(ESPObject espObject, bool inCombat)
     {
         return espObject.Type switch
         {
             ESPObject.ESPType.Player => false,
-            ESPObject.ESPType.Enemy => !espObject.InCombat(),
-            ESPObject.ESPType.Mimic => !espObject.InCombat(),
-            ESPObject.ESPType.FriendlyEnemy => !espObject.InCombat(),
-            ESPObject.ESPType.BronzeChest => NecroLens.Config.ShowBronzeCoffers,
-            ESPObject.ESPType.SilverChest => NecroLens.Config.ShowSilverCoffers,
-            ESPObject.ESPType.GoldChest => NecroLens.Config.ShowGoldCoffers,
-            ESPObject.ESPType.AccursedHoard => NecroLens.Config.ShowHoards && !NecroLens.DeepDungeonService.FloorDetails.HoardFound,
-            ESPObject.ESPType.MimicChest => NecroLens.Config.ShowMimicCoffer,
-            ESPObject.ESPType.Trap => NecroLens.Config.ShowTraps,
-            ESPObject.ESPType.Return => NecroLens.Config.ShowReturn,
-            ESPObject.ESPType.Passage => NecroLens.Config.ShowPassage,
+            ESPObject.ESPType.Enemy => !inCombat,
+            ESPObject.ESPType.Mimic => !inCombat,
+            ESPObject.ESPType.FriendlyEnemy => !inCombat,
+            ESPObject.ESPType.BronzeChest => configuration.ShowBronzeCoffers,
+            ESPObject.ESPType.SilverChest => configuration.ShowSilverCoffers,
+            ESPObject.ESPType.GoldChest => configuration.ShowGoldCoffers,
+            ESPObject.ESPType.AccursedHoard => configuration.ShowHoards && !deepDungeonService.FloorDetails.HoardFound,
+            ESPObject.ESPType.MimicChest => configuration.ShowMimicCoffer,
+            ESPObject.ESPType.Trap => configuration.ShowTraps,
+            ESPObject.ESPType.Return => configuration.ShowReturn,
+            ESPObject.ESPType.Passage => configuration.ShowPassage,
             _ => false
         };
     }
@@ -130,81 +159,90 @@ public class ESPService : IDisposable
     {
         try
         {
-            if (!espObject.GameObject.IsValid())
+            // Check the game object validity before doing any work.
+            if (espObject.GameObject == null || !espObject.GameObject.IsValid())
                 return;
 
-            var type = espObject.Type;
-            var onScreen = NecroLens.GameGui.WorldToScreen(espObject.GameObject.Position, out var position2D);
-            if (onScreen)
+            // Get the screen position.
+            var onScreen = gameGui.WorldToScreen(espObject.GameObject.Position, out var position2D);
+            if (!onScreen)
+                return;
+
+            // Cache the combat status
+            bool inCombat = espObject.InCombatCached;
+
+            var distance = 0.0;
+            lock (espObject)
             {
-                var distance = espObject.Distance();
-
-                if (NecroLens.Config.ShowPlayerDot && type == ESPObject.ESPType.Player)
-                    DrawPlayerDot(drawList, position2D);
-
-                if (DoDrawName(espObject))
-                    DrawName(drawList, espObject, position2D);
-
-                if (espObject.Type == ESPObject.ESPType.AccursedHoard && NecroLens.Config.ShowHoards && !NecroLens.DeepDungeonService.FloorDetails.HoardFound)
-                {
-                    var chestRadius = type == ESPObject.ESPType.AccursedHoard ? 2.0f : 1f; // Make Hoards bigger
-
-                    if (distance <= 35 && NecroLens.Config.HighlightCoffers)
-                        DrawCircleFilled(drawList, espObject, chestRadius, espObject.RenderColor(), 1f);
-                }
-
-                if (espObject.IsChest())
-                {
-                    if (!NecroLens.Config.ShowBronzeCoffers && type == ESPObject.ESPType.BronzeChest) return;
-                    if (!NecroLens.Config.ShowSilverCoffers && type == ESPObject.ESPType.SilverChest) return;
-                    if (!NecroLens.Config.ShowGoldCoffers && type == ESPObject.ESPType.GoldChest) return;
-                    if (!NecroLens.Config.ShowHoards && type == ESPObject.ESPType.AccursedHoardCoffer) return;
-
-                    if (distance <= 35 && NecroLens.Config.HighlightCoffers)
-                        DrawCircleFilled(drawList, espObject, 1f, espObject.RenderColor(), 1f);
-                    if (distance <= 10 && NecroLens.Config.ShowCofferInteractionRange)
-                        DrawInteractionCircle(drawList, espObject, espObject.InteractionDistance());
-                }
-
-                if (NecroLens.Config.ShowTraps && type == ESPObject.ESPType.Trap)
-                    DrawCircleFilled(drawList, espObject, 1.7f, espObject.RenderColor());
-
-                if (NecroLens.Config.ShowMimicCoffer && type == ESPObject.ESPType.MimicChest)
-                    DrawCircleFilled(drawList, espObject, 1f, espObject.RenderColor());
-
-                if (NecroLens.Config.HighlightPassage && type == ESPObject.ESPType.Passage)
-                    DrawCircleFilled(drawList, espObject, 2f, espObject.RenderColor());
+                distance = espObject.Distance();
             }
 
-            if (NecroLens.Config.ShowMobViews &&
-                (type == ESPObject.ESPType.Enemy || type == ESPObject.ESPType.Mimic) &&
-                BattleNpcSubKind.Enemy.Equals((BattleNpcSubKind)espObject.GameObject.SubKind) &&
-                !espObject.InCombat())
+            if (configuration.ShowPlayerDot && espObject.Type == ESPObject.ESPType.Player)
+                DrawPlayerDot(drawList, position2D, configuration);
+
+            // Pass the cached inCombat value to DoDrawName.
+            if (DoDrawName(espObject, inCombat))
+                DrawName(drawList, espObject, position2D, deepDungeonService);
+
+            // Continue drawing based on type and distance...
+            if (espObject.Type == ESPObject.ESPType.AccursedHoard
+                && configuration.ShowHoards && !deepDungeonService.FloorDetails.HoardFound)
             {
-                if (NecroLens.Config.ShowPatrolArrow && espObject.IsPatrol())
+                var chestRadius = espObject.Type == ESPObject.ESPType.AccursedHoard ? 2.0f : 1f;
+                if (distance <= 35 && configuration.HighlightCoffers)
+                    DrawCircleFilled(drawList, espObject, chestRadius, espObject.RenderColor(), 1f);
+            }
+
+            if (espObject.IsChest())
+            {
+                if (!configuration.ShowBronzeCoffers && espObject.Type == ESPObject.ESPType.BronzeChest) return;
+                if (!configuration.ShowSilverCoffers && espObject.Type == ESPObject.ESPType.SilverChest) return;
+                if (!configuration.ShowGoldCoffers && espObject.Type == ESPObject.ESPType.GoldChest) return;
+                if (!configuration.ShowHoards && espObject.Type == ESPObject.ESPType.AccursedHoardCoffer) return;
+
+                if (distance <= 35 && configuration.HighlightCoffers)
+                    DrawCircleFilled(drawList, espObject, 1f, espObject.RenderColor(), 1f);
+                if (distance <= 10 && configuration.ShowCofferInteractionRange)
+                    DrawInteractionCircle(drawList, espObject, espObject.InteractionDistance());
+            }
+
+            if (configuration.ShowTraps && espObject.Type == ESPObject.ESPType.Trap)
+                DrawCircleFilled(drawList, espObject, 1.7f, espObject.RenderColor());
+
+            if (configuration.ShowMimicCoffer && espObject.Type == ESPObject.ESPType.MimicChest)
+                DrawCircleFilled(drawList, espObject, 1f, espObject.RenderColor());
+
+            if (configuration.HighlightPassage && espObject.Type == ESPObject.ESPType.Passage)
+                DrawCircleFilled(drawList, espObject, 2f, espObject.RenderColor());
+
+            if (configuration.ShowMobViews &&
+                (espObject.Type == ESPObject.ESPType.Enemy || espObject.Type == ESPObject.ESPType.Mimic) &&
+                BattleNpcSubKind.Enemy.Equals((BattleNpcSubKind)espObject.GameObject.SubKind) &&
+                !inCombat)
+            {
+                if (configuration.ShowPatrolArrow && espObject.IsPatrol())
                     DrawFacingDirectionArrow(drawList, espObject, Color.Red.ToUint(), 0.6f);
 
-                if (espObject.Distance() <= 50)
+                if (distance <= 50)
                 {
                     switch (espObject.AggroType())
                     {
                         case ESPObject.ESPAggroType.Proximity:
                             DrawCircle(drawList, espObject, espObject.AggroDistance(),
-                                       NecroLens.Config.NormalAggroColor, DefaultFilledOpacity);
+                                       configuration.NormalAggroColor, ESPUtils.DefaultFilledOpacity);
                             break;
                         case ESPObject.ESPAggroType.Sound:
                             DrawCircle(drawList, espObject, espObject.AggroDistance(),
-                                       NecroLens.Config.SoundAggroColor, DefaultFilledOpacity);
+                                       configuration.SoundAggroColor, ESPUtils.DefaultFilledOpacity);
                             DrawCircleFilled(drawList, espObject, espObject.GameObject.HitboxRadius,
-                                             NecroLens.Config.SoundAggroColor, DefaultFilledOpacity);
+                                             configuration.SoundAggroColor, ESPUtils.DefaultFilledOpacity);
                             break;
                         case ESPObject.ESPAggroType.Sight:
                             DrawConeFromCenterPoint(drawList, espObject, espObject.SightRadian,
-                                                    espObject.AggroDistance(), NecroLens.Config.NormalAggroColor);
+                                                    espObject.AggroDistance(), configuration.NormalAggroColor);
                             break;
                         default:
-                            NecroLens.PluginLog.Error(
-                                $"Unable to process AggroType {espObject.AggroType().ToString()}");
+                            logger.LogError($"Unable to process AggroType {espObject.AggroType()}");
                             break;
                     }
                 }
@@ -212,113 +250,76 @@ public class ESPService : IDisposable
         }
         catch (Exception e)
         {
-            NecroLens.PluginLog.Error(e.ToString());
+            logger.LogError(e.ToString());
         }
     }
-
-
 
     /**
      * Method returns true if the ESP is Enabled, In valid state and in DeepDungeon
      */
     private bool ShouldDraw()
     {
-        return NecroLens.Config.EnableESP &&
+        return configuration.EnableESP &&
                !(NecroLens.Condition[ConditionFlag.LoggingOut] ||
                  NecroLens.Condition[ConditionFlag.BetweenAreas] ||
                  NecroLens.Condition[ConditionFlag.BetweenAreas51]) &&
-               DeepDungeonUtil.InDeepDungeon && NecroLens.ClientState.LocalPlayer != null &&
-               NecroLens.ClientState.LocalContentId > 0 && NecroLens.ObjectTable.Length > 0 &&
-               !NecroLens.DeepDungeonService.FloorDetails.FloorTransfer;
+               DeepDungeonUtil.InDeepDungeon && clientState.LocalPlayer != null &&
+               clientState.LocalContentId > 0 && objectTable.Length > 0 &&
+               !deepDungeonService.FloorDetails.FloorTransfer;
     }
 
-    /**
-     * Not-Drawing Scanner method updating mapObjects every Tick.
-     */
-    private void MapScanner()
+    public void DoMapScan()
     {
-        NecroLens.PluginLog.Debug("ESP Background scan started");
-        // Keep scanner alive till Dispose()
-        while (active)
+        // If your existing “ShouldDraw()” is also in ESPService, just call it:
+        if (!ShouldDraw())
         {
-            try
+            logger.LogDebug("DoMapScan(): ShouldDraw() returned false, skipping scan.");
+            return;
+        }
+
+        var entityList = new List<ESPObject>();
+        logger.LogDebug($"DoMapScan(): Starting scan of objectTable (length={objectTable.Length}).");
+
+        int count = 0;
+        // The rest is basically your old scanning logic:
+        foreach (var obj in objectTable)
+        {
+            if (obj.IsValid() && !IsIgnoredObject(obj))
             {
-                if (GetShouldDrawFromMainThread())
+                MobInfo? mobInfo = null;
+                if (obj is IBattleNpc npcObj)
                 {
-                    var entityList = new List<ESPObject>();
-                    var waitHandle = new ManualResetEventSlim();
-                    NecroLens.Framework.RunOnFrameworkThread(() =>
-                    {
-                        try
-                        {
-                            foreach (var obj in NecroLens.ObjectTable)
-                            {
-                                // Ignore every player object
-                                if (obj.IsValid() && !IsIgnoredObject(obj))
-                                {
-                                    MobInfo mobInfo = null!;
-                                    if (obj is IBattleNpc npcObj)
-                                        NecroLens.MobService.MobInfoDictionary.TryGetValue(npcObj.NameId, out mobInfo!);
-
-                                    var espObj = new ESPObject(obj, mobInfo);
-
-                                    if (obj.DataId == DataIds.GoldChest
-                                        && NecroLens.DeepDungeonService.FloorDetails.DoubleChests.TryGetValue(obj.EntityId, out var value))
-                                    {
-                                        espObj.ContainingPomander = value;
-                                    }
-
-                                    NecroLens.DeepDungeonService.TryInteract(espObj);
-
-                                    entityList.Add(espObj);
-                                    NecroLens.DeepDungeonService.TrackFloorObjects(espObj);
-                                }
-
-                                if (NecroLens.ClientState.LocalPlayer != null &&
-                                    NecroLens.ClientState.LocalPlayer.EntityId == obj.EntityId)
-                                    entityList.Add(new ESPObject(obj));
-                            }
-                            waitHandle.Set();
-                        }
-                        catch (Exception e)
-                        {
-                            NecroLens.PluginLog.Error(e.ToString());
-                        }
-                    });
-                    waitHandle.Wait();
-
-                    Monitor.Enter(mapObjects);
-                    mapObjects.Clear();
-                    mapObjects.AddRange(entityList);
-                    Monitor.Exit(mapObjects);
+                    mobInfoService.MobInfoDictionary.TryGetValue(npcObj.NameId, out mobInfo);
                 }
-            }
-            catch (Exception e)
-            {
-                NecroLens.PluginLog.Error(e.ToString());
+
+                var espObj = new ESPObject(obj, clientState, configuration, deepDungeonService, logger, mobInfo);
+                espObj.InCombatCached = espObj.InCombat();
+
+                if (obj.DataId == DataIds.GoldChest &&
+                    deepDungeonService.FloorDetails.DoubleChests.TryGetValue(obj.EntityId, out var value))
+                {
+                    espObj.ContainingPomander = value;
+                }
+
+                deepDungeonService.TryInteract(espObj);
+                entityList.Add(espObj);
+                deepDungeonService.TrackFloorObjects(espObj);
+                count++;
             }
 
-            Thread.Sleep(Tick);
+            if (clientState.LocalPlayer != null &&
+                clientState.LocalPlayer.EntityId == obj.EntityId)
+            {
+                entityList.Add(new ESPObject(obj, clientState, configuration, deepDungeonService, logger, null));
+            }
+        }
+
+        logger.LogDebug($"DoMapScan(): Found {count} valid objects. Updating mapObjects list.");
+        lock (mapObjects)
+        {
+            mapObjects.Clear();
+            mapObjects.AddRange(entityList);
         }
     }
-
-    private bool GetShouldDrawFromMainThread()
-    {
-        bool shouldDraw = false;
-        var waitHandle = new ManualResetEventSlim();
-        NecroLens.Framework.RunOnFrameworkThread(() =>
-        {
-            try
-            {
-                shouldDraw = ShouldDraw();
-                waitHandle.Set();
-            }
-            catch (Exception e)
-            {
-                NecroLens.PluginLog.Error(e.ToString());
-            }
-        });
-        waitHandle.Wait();
-        return shouldDraw;
-    }
 }
+

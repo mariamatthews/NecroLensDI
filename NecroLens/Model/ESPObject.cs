@@ -1,18 +1,17 @@
 using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Linq;
+using System.Numerics;
+using Dalamud.Game.ClientState;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
-using ECommons.Logging;
 using NecroLens.Data;
-using NecroLens.Service;
+using NecroLens.Interface;
 using NecroLens.util;
 
 namespace NecroLens.Model;
 
-[SuppressMessage("ReSharper", "InconsistentNaming")]
 [Serializable]
 public class ESPObject
 {
@@ -47,36 +46,66 @@ public class ESPObject
         Passage
     }
 
-    private MobInfo? mobInfo;
+    private readonly IClientState? clientState;
+    private readonly Configuration? configuration;
+    private readonly IDeepDungeonService? deepDungeonService;
+    private readonly ILoggingService logger;
+    private readonly MobInfo? mobInfo;
 
-    public ESPObject(IGameObject gameObject, MobInfo? mobInfo = null)
+    public Pomander? ContainingPomander { get; set; } = null;
+    public ESPType Type { get; set; } = ESPType.Enemy;
+
+    // For "sight" mobs, ~90° angle
+    public float SightRadian { get; set; } = 1.571f;
+
+    public IGameObject GameObject { get; }
+    public bool InCombatCached { get; internal set; }
+
+    public ESPObject(
+        IGameObject gameObject,
+        IClientState clientState,
+        Configuration configuration,
+        IDeepDungeonService deepDungeonService,
+        ILoggingService logger,
+        MobInfo? mobInfo)
     {
-        ContainingPomander = null;
-        GameObject = gameObject;
+        this.GameObject = gameObject;
+        this.clientState = clientState;
+        this.configuration = configuration;
+        this.deepDungeonService = deepDungeonService;
+        this.logger = logger;
         this.mobInfo = mobInfo;
 
-        // Mob info exists? check floor overrides
+        ContainingPomander = null;
+
         if (this.mobInfo != null)
         {
-            if (DeepDungeonContentInfo.ContentMobInfoChanges.TryGetValue(
-                    NecroLens.DeepDungeonService.CurrentContentId, out var overrideInfos))
+            if (this.deepDungeonService != null &&
+                DeepDungeonContentInfo.ContentMobInfoChanges
+                   .TryGetValue(this.deepDungeonService.CurrentContentId, out var overrideInfos))
             {
-                var npc = (IBattleNpc)gameObject;
-                var mob = overrideInfos.FirstOrDefault(m => m.Id == npc.NameId);
-                if (mob != null)
+                // Safe read of NameId
+                var nameId = SafelyReadGameObject<uint>(
+                    g => ((IBattleNpc)g).NameId,
+                    0,
+                    "Constructor-NameId"
+                );
+
+                var mobOverride = overrideInfos.FirstOrDefault(m => m.Id == nameId);
+                if (mobOverride != null)
                 {
-                    this.mobInfo.Patrol = mob.Patrol ?? this.mobInfo.Patrol;
-                    this.mobInfo.AggroType = mob.AggroType ?? this.mobInfo.AggroType;
+                    this.mobInfo.Patrol = mobOverride.Patrol ?? this.mobInfo.Patrol;
+                    this.mobInfo.AggroType = mobOverride.AggroType ?? this.mobInfo.AggroType;
                 }
             }
         }
-
-        // No MobInfo? Must be an other object
         else
         {
-            var dataId = gameObject.DataId;
+            // Safely read memory for DataId and EntityId
+            var dataId = SafelyReadGameObject<uint>(g => g.DataId, 0, "Constructor-DataId");
+            var entityId = SafelyReadGameObject<uint>(g => g.EntityId, 0, "Constructor-EntityId");
 
-            if (NecroLens.ClientState.LocalPlayer != null && NecroLens.ClientState.LocalPlayer.EntityId == gameObject.EntityId)
+            if (clientState.LocalPlayer != null && clientState.LocalPlayer.EntityId == entityId)
                 Type = ESPType.Player;
             else if (DataIds.BronzeChestIDs.Contains(dataId))
                 Type = ESPType.BronzeChest;
@@ -100,19 +129,92 @@ public class ESPObject
                 Type = ESPType.FriendlyEnemy;
             else if (DataIds.MimicIDs.Contains(dataId))
                 Type = ESPType.Mimic;
+            else
+                Type = ESPType.Enemy;
+        }
+    }
+    // -----------------------
+    // Safe read helpers
+    // -----------------------
+    private T SafelyReadGameObject<T>(
+        Func<IGameObject, T> readFunc,
+        T defaultValue,
+        string operationName)
+    {
+        if (GameObject == null || !GameObject.IsValid())
+            return defaultValue;
+
+        try
+        {
+            return readFunc(GameObject);
+        }
+        catch (AccessViolationException ave)
+        {
+            logger.LogError($"{operationName}: AccessViolationException.\n{ave}");
+            return defaultValue;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError($"{operationName}: Exception.\n{ex}");
+            return defaultValue;
         }
     }
 
-    public Pomander? ContainingPomander { get; set; }
+    private T SafelyReadCharacter<T>(
+        Func<ICharacter, T> readFunc,
+        T defaultValue,
+        string operationName)
+    {
+        // Check if it's an IBattleNpc + ICharacter, etc.
+        if (GameObject == null || !GameObject.IsValid() || GameObject is not IBattleNpc npc)
+            return defaultValue;
 
-    public IGameObject GameObject { get; }
+        if (npc is not ICharacter character)
+            return defaultValue;
 
-    public ESPType Type { get; set; } = ESPType.Enemy;
+        if (character.Address == IntPtr.Zero)
+        {
+            logger.LogDebug($"{operationName}: character.Address is zero.");
+            return defaultValue;
+        }
 
-    /**
-     * Default view of a Sight mob is 90° in front. We use the radian value of cos 90°.
-     */
-    public float SightRadian { get; set; } = 1.571f;
+        try
+        {
+            return readFunc(character);
+        }
+        catch (AccessViolationException ave)
+        {
+            logger.LogError($"{operationName}: AccessViolationException occurred.\n{ave}");
+            return defaultValue;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError($"{operationName}: Exception occurred.\n{ex}");
+            return defaultValue;
+        }
+    }
+
+    private Vector3 SafelyReadObjectPosition(IGameObject? obj, string operationName)
+    {
+        if (obj == null || !obj.IsValid())
+            return Vector3.Zero;
+
+        try
+        {
+            return obj.Position;
+        }
+        catch (AccessViolationException ave)
+        {
+            logger.LogError($"{operationName}: AccessViolationException.\n{ave}");
+            return Vector3.Zero;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError($"{operationName}: Exception.\n{ex}");
+            return Vector3.Zero;
+        }
+    }
+
 
     /**
      * Most monsters have different aggro distances. 10.8y is roughly a safe value. Expect PotD Mimics ... 14.6 ._.
@@ -144,10 +246,12 @@ public class ESPObject
 
     public bool IsPatrol()
     {
-        // heavenly onmitsu exists twice, one partol one not. Only DataId differs
+        // If special override
         if (mobInfo != null && mobInfo.Id == 7305)
         {
-            return GameObject.DataId == 8922;
+            // Safely read DataId
+            var dataId = SafelyReadGameObject<uint>(g => g.DataId, 0, "IsPatrol");
+            return dataId == 8922;
         }
 
         return mobInfo?.Patrol ?? false;
@@ -165,11 +269,39 @@ public class ESPObject
         };
     }
 
-    public float Distance()
+    // Example: a memory-read method using SafelyReadCharacter
+    public bool InCombat()
     {
-        return NecroLens.ClientState.LocalPlayer != null ? GameObject.Position.Distance2D(NecroLens.ClientState.LocalPlayer.Position) : 0;
+        return SafelyReadCharacter(
+            c => (c.StatusFlags & StatusFlags.InCombat) != 0,
+            false,
+            "InCombat"
+        );
     }
 
+    public float Distance()
+    {
+        // If no clientState, can't get local player
+        if (clientState == null)
+            return 0f;
+
+        var localPlayer = clientState.LocalPlayer;
+        if (localPlayer == null)
+            return 0f;
+
+        // Safely read local player’s position
+        var playerPos = SafelyReadObjectPosition(localPlayer, "Distance-LocalPlayerPos");
+
+        // Safely read this GameObject’s position
+        var objPos = SafelyReadObjectPosition(GameObject, "Distance-GameObjectPos");
+
+        // If either is zero, distance is 0
+        if (playerPos == Vector3.Zero || objPos == Vector3.Zero)
+            return 0f;
+
+        // Do your 2D distance
+        return objPos.Distance2D(playerPos);
+    }
     public bool IsChest()
     {
         return Type is ESPType.BronzeChest or ESPType.SilverChest or ESPType.GoldChest or ESPType.AccursedHoardCoffer;
@@ -195,60 +327,20 @@ public class ESPObject
             case ESPType.Return:
                 return Color.LightBlue.ToUint();
             case ESPType.Passage:
-                return NecroLens.Config.PassageColor;
+                return configuration?.PassageColor ?? Color.White.ToUint();
             case ESPType.AccursedHoard:
             case ESPType.AccursedHoardCoffer:
-                return NecroLens.Config.HoardColor;
+                return configuration?.HoardColor ?? Color.White.ToUint();
             case ESPType.GoldChest:
-                return NecroLens.Config.GoldCofferColor;
+                return configuration?.GoldCofferColor ?? Color.White.ToUint();
             case ESPType.SilverChest:
-                return NecroLens.Config.SilverCofferColor;
+                return configuration?.SilverCofferColor ?? Color.White.ToUint();
             case ESPType.BronzeChest:
-                return NecroLens.Config.BronzeCofferColor;
+                return configuration?.BronzeCofferColor ?? Color.White.ToUint();
             default:
                 return Color.White.ToUint();
         }
     }
-
-    public bool InCombat()
-    {
-        try
-        {
-            // Only proceed if GameObject is valid and is actually a BattleNpc
-            if (GameObject is IBattleNpc npc && GameObject.IsValid())
-            {
-                // Additional null check and validation before accessing StatusFlags
-                if (npc is ICharacter character)
-                {
-                    // Safer way to access StatusFlags
-                    try
-                    {
-                        return (character.StatusFlags & StatusFlags.InCombat) != 0;
-                    }
-                    catch
-                    {
-                        // If StatusFlags access fails, we'll assume not in combat
-                        // to prevent crashes
-                        return false;
-                    }
-                }
-                return false;
-            }
-            return false;
-        }
-        catch (AccessViolationException)
-        {
-            // 6.4: accessing StatusFlags sometimes causes access violations
-            // we ignore them and assume "yes" here to disable rendering
-            return true;
-        }
-        catch (Exception e)
-        {
-            NecroLens.PluginLog.Error($"Error in InCombat check: {e}");
-            return false;
-        }
-    }
-
 
     public string? NameSymbol()
     {
@@ -271,45 +363,103 @@ public class ESPObject
 
     public string Name()
     {
-        // We dont wanna see Bosses and Adds
-        if (IsBossOrAdd()) return "";
-
-        // No name for all "Enemies" (default type) which are not hostile
-        if (Type == ESPType.Enemy && !BattleNpcSubKind.Enemy.Equals((BattleNpcSubKind)GameObject.SubKind))
+        // We don't want to see Bosses and Adds
+        if (IsBossOrAdd())
             return "";
 
+        // Safely read SubKind from the game object
+        var subKind = SafelyReadGameObject(
+            g => g.SubKind,
+            (byte)0,
+            "Name-SubKind"
+        );
+
+        // If Type=Enemy but SubKind != Enemy, skip name
+        if (Type == ESPType.Enemy && subKind != (byte)BattleNpcSubKind.Enemy)
+            return "";
+
+        // Begin building the name string
         var name = "";
+
+        // Symbol from NameSymbol() (safe, no direct memory read)
         var symbol = NameSymbol();
         if (symbol != null)
             name += symbol + " ";
 
-        name += Type switch
-        {
-            ESPType.Trap => DataIds.TrapIDs.TryGetValue(GameObject.DataId, out var value)
-                                ? value
-                                : Strings.Traps_Unknown,
-            ESPType.AccursedHoard => Strings.Chest_Accursed_Hoard,
-            ESPType.BronzeChest => Strings.Chest_Bronze_Chest,
-            ESPType.SilverChest => Strings.Chest_Silver_Chest,
-            ESPType.GoldChest => Strings.Chest_Gold_Chest,
-            ESPType.MimicChest => Strings.Chest_Mimic,
-            _ => GameObject.Name.TextValue
-        };
+        // Safely read DataId if needed
+        var dataId = SafelyReadGameObject(
+            g => g.DataId,
+            0u,
+            "Name-DataId"
+        );
 
-        name += Type switch
+        // Decide how to get the display name
+        string mainText;
+        switch (Type)
         {
-            ESPType.Passage => " - " + Distance().ToString("0.0"),
-            _ => ""
-        };
+            case ESPType.Trap:
+                if (DataIds.TrapIDs.TryGetValue(dataId, out var trapValue))
+                    mainText = trapValue;
+                else
+                    mainText = Strings.Traps_Unknown;
+                break;
 
+            case ESPType.AccursedHoard:
+                mainText = Strings.Chest_Accursed_Hoard;
+                break;
 
-        if (NecroLens.Config.ShowDebugInformation)
+            case ESPType.BronzeChest:
+                mainText = Strings.Chest_Bronze_Chest;
+                break;
+
+            case ESPType.SilverChest:
+                mainText = Strings.Chest_Silver_Chest;
+                break;
+
+            case ESPType.GoldChest:
+                mainText = Strings.Chest_Gold_Chest;
+                break;
+
+            case ESPType.MimicChest:
+                mainText = Strings.Chest_Mimic;
+                break;
+
+            default:
+                // Safely read the Name text
+                mainText = SafelyReadGameObject(
+                    g => g.Name.TextValue,
+                    string.Empty,
+                    "Name-TextValue"
+                );
+                break;
+        }
+
+        name += mainText;
+
+        // If Type == Passage, append distance
+        if (Type == ESPType.Passage)
         {
-            name += "\nD:" + GameObject.DataId;
-            if (GameObject is IBattleNpc npc2) name += " N:" + npc2.NameId;
+            name += " - " + Distance().ToString("0.0");
+        }
+
+        // Debug info
+        if (configuration.ShowDebugInformation)
+        {
+            name += "\nD:" + dataId;
+
+            // If cast to IBattleNpc is valid, read NameId
+            var npcNameId = SafelyReadGameObject(
+                g => ((IBattleNpc)g).NameId,
+                0u,
+                "Name-NameId"
+            );
+
+            if (npcNameId != 0)
+            {
+                name += " N:" + npcNameId;
+            }
         }
 
         return name;
     }
 }
-

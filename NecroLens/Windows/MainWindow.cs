@@ -7,6 +7,7 @@ using Dalamud.Interface.Components;
 using Dalamud.Interface.Windowing;
 using ImGuiNET;
 using NecroLens.Data;
+using NecroLens.Interface;
 using NecroLens.Model;
 using NecroLens.Service;
 using NecroLens.util;
@@ -15,11 +16,17 @@ namespace NecroLens.Windows;
 
 public class MainWindow : Window, IDisposable
 {
-    public MainWindow() : base("NecroLens",
+    private readonly Configuration configuration;
+    private readonly IMainUIManager mainUIManager;
+
+    public MainWindow(NecroLens plugin) : base("NecroLens",
                                ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
                                ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize |
                                ImGuiWindowFlags.NoFocusOnAppearing)
     {
+        configuration = plugin.Configuration;
+        mainUIManager = plugin;
+
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(370, 260),
@@ -193,23 +200,23 @@ public class MainWindow : Window, IDisposable
         ImGui.BeginGroup();
 
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetColumnWidth() - 160);
-        var showAggro = NecroLens.Config.ShowMobViews;
+        var showAggro = configuration.ShowMobViews;
         if (ImGui.Checkbox(Strings.MainWindow_ShowAggro, ref showAggro))
         {
-            NecroLens.Config.ShowMobViews = showAggro;
-            NecroLens.Config.Save();
+            configuration.ShowMobViews = showAggro;
+            configuration.Save();
         }
 
         ImGui.SameLine();
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetColumnWidth() - 20);
-        if (ImGuiComponents.IconButton(FontAwesomeIcon.Cog)) NecroLens.ShowConfigWindow();
+        if (ImGuiComponents.IconButton(FontAwesomeIcon.Cog)) mainUIManager.ToggleConfigUI();
 
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetColumnWidth() - 160);
-        var openChests = NecroLens.Config.OpenChests;
+        var openChests = configuration.OpenChests;
         if (ImGui.Checkbox(Strings.MainWindow_OpenChests, ref openChests))
         {
-            NecroLens.Config.OpenChests = openChests;
-            NecroLens.Config.Save();
+            configuration.OpenChests = openChests;
+            configuration.Save();
         }
 
         ImGui.SameLine();

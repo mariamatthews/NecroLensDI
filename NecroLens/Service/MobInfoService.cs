@@ -4,19 +4,23 @@ using System.IO;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
+using NecroLens.Interface;
 using NecroLens.Model;
 using Newtonsoft.Json;
 
 namespace NecroLens.Service;
 
-public class MobInfoService : IDisposable
+public class MobInfoService : IDisposable, IMobInfoService
 {
-    public readonly Dictionary<uint, MobInfo> MobInfoDictionary;
+    private readonly ILoggingService logger;
+    public Dictionary<uint, MobInfo> MobInfoDictionary { get; } = new Dictionary<uint, MobInfo>();
 
-    public MobInfoService()
+    public MobInfoService(ILoggingService logger)
     {
-        MobInfoDictionary = new Dictionary<uint, MobInfo>();
+        this.logger = logger;
+        this.logger.LogInformation($"Initializing: ,  {nameof(MobInfoService)}");
         LoadDeepDungeonMobInfos();
+
     }
 
     public void Dispose()
@@ -26,14 +30,14 @@ public class MobInfoService : IDisposable
 
     private void LoadDeepDungeonMobInfos()
     {
-        NecroLens.PluginLog.Info("Loading Mob infos...");
+        logger.LogInformation("Loading Mob infos...");
         try
         {
             LoadMobInfoFile(Path.Combine(NecroLens.PluginInterface.AssemblyLocation.Directory?.FullName!, "data/allMobs.json"));
         }
         catch (Exception e)
         {
-            NecroLens.PluginLog.Error("Unable to load MobInfo!", e);
+            logger.LogError($"Unable to load MobInfo from backup location! Panic! Exception: {e.Message}");
         }
 
 
@@ -41,7 +45,7 @@ public class MobInfoService : IDisposable
         {
             try
             {
-                NecroLens.PluginLog.Info("Mob infos empty. Retry backup method.");
+                logger.LogInformation("Mob infos empty. Retry backup method.");
                 const string uri =
                     "https://raw.githubusercontent.com/Jukkales/NecroLens/main/NecroLens/Data/allMobs.json";
                 var result = Load<List<MobInfo>>(new Uri(uri));
@@ -55,17 +59,17 @@ public class MobInfoService : IDisposable
                 else
                 {
                     MobInfoDictionary.Clear();
-                    NecroLens.PluginLog.Error("Unable to load MobInfo from backup location! Panic!");
+                    logger.LogError("Unable to load MobInfo from backup location! Panic!");
                 }
             }
             catch (Exception e)
             {
-                NecroLens.PluginLog.Error("Unable to load MobInfo from backup location! Panic!", e);
+                logger.LogError($"Unable to load MobInfo from backup location! Panic! Exception: {e.Message}");
                 throw;
             }
         }
 
-        NecroLens.PluginLog.Information($"Loaded infos for {MobInfoDictionary.Count} mobs!");
+        logger.LogInformation($"Loaded infos for {MobInfoDictionary.Count} mobs!");
     }
 
     public static async Task<T?> Load<T>(Uri uri)
@@ -85,7 +89,7 @@ public class MobInfoService : IDisposable
         else
         {
             MobInfoDictionary.Clear();
-            NecroLens.PluginLog.Error($"Unable to load MobInfo file {path}!");
+            logger.LogError($"Unable to load MobInfo file {path}!");
         }
     }
 

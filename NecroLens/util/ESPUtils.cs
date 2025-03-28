@@ -5,7 +5,9 @@ using System.Drawing;
 using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Types;
 using ImGuiNET;
+using NecroLens.Interface;
 using NecroLens.Model;
+using NecroLens.Service;
 
 namespace NecroLens.util;
 
@@ -26,17 +28,16 @@ public static class ESPUtils
     {
         if (DataIds.IgnoredDataIDs.Contains(gameObject.DataId)) return true;
         if (gameObject.IsDead || gameObject is IBattleNpc { CurrentHp: <= 0 }) return true;
-
         return false;
     }
 
-    public static void DrawName(ImDrawListPtr drawList, ESPObject espObject, Vector2 position)
+    public static void DrawName(ImDrawListPtr drawList, ESPObject espObject, Vector2 position, IDeepDungeonService deepDungeonService)
     {
         var name = espObject.Name();
 
         if (espObject.Type == ESPObject.ESPType.GoldChest && espObject.ContainingPomander != null)
         {
-            name += "\n" + NecroLens.DeepDungeonService.PomanderNames[espObject.ContainingPomander.Value];
+            name += "\n" + deepDungeonService.PomanderNames[espObject.ContainingPomander.Value];
         }
 
         var textSize = ImGui.CalcTextSize(name);
@@ -45,9 +46,9 @@ public static class ESPUtils
         drawList.AddText(textPosition, espObject.RenderColor(), name);
     }
 
-    public static void DrawPlayerDot(ImDrawListPtr drawList, Vector2 position)
+    public static void DrawPlayerDot(ImDrawListPtr drawList, Vector2 position, Configuration configuration)
     {
-        drawList.AddCircleFilled(position, 3f, NecroLens.Config.PlayerDotColor, 100);
+        drawList.AddCircleFilled(position, 3f, configuration.PlayerDotColor, 100);
     }
 
     public static void DrawInteractionCircle(ImDrawListPtr drawList, ESPObject espObject, float radius)

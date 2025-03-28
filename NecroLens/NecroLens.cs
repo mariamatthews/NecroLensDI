@@ -9,126 +9,180 @@ using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
-using ECommons;
 using NecroLens.Model;
 using NecroLens.Service;
 using NecroLens.Windows;
-using ECommons.DalamudServices; // Ensure this is referenced
+using NecroLens.Interface;
+using NecroLens.Logging;
+using Dalamud.Game.Command;
+using NecroLens.Data;
+using System; // Ensure this is referenced
 
 namespace NecroLens;
 
 [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
 [SuppressMessage("ReSharper", "UnusedType.Global")]
 [SuppressMessage("ReSharper", "InconsistentNaming")]
-public sealed class NecroLens : IDalamudPlugin
+public sealed class NecroLens : IDalamudPlugin, IMainUIManager
 {
-    // 1) Dalamud services
-    [PluginService] public static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
-    [PluginService] public static IClientState ClientState { get; private set; } = null!;
-    [PluginService] public static ICondition Condition { get; private set; } = null!;
-    [PluginService] public static ICommandManager CommandManager { get; private set; } = null!;
-    [PluginService] public static IDataManager DataManager { get; private set; } = null!;
-    [PluginService] public static IFramework Framework { get; private set; } = null!;
-    [PluginService] public static IGameGui GameGui { get; private set; } = null!;
-    [PluginService] public static IPluginLog PluginLog { get; private set; } = null!;
-    [PluginService] public static IObjectTable ObjectTable { get; private set; } = null!;
-    [PluginService] public static IChatGui ChatGui { get; private set; } = null!;
-    [PluginService] public static IPartyList PartyList { get; private set; } = null!;
-    [PluginService] public static IGameNetwork GameNetwork { get; private set; } = null!;
+    //Dalamud services
+    [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
+    [PluginService] internal static IClientState ClientState { get; private set; } = null!;
+    [PluginService] internal static ICondition Condition { get; private set; } = null!;
+    [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
+    [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
+    [PluginService] internal static IFramework Framework { get; private set; } = null!;
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+    [PluginService] internal static IPluginLog PluginLog { get; private set; } = null!;
+    [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
+    [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
+    [PluginService] internal static IPartyList PartyList { get; private set; } = null!;
+    [PluginService] internal static IGameNetwork GameNetwork { get; private set; } = null!;
+    [PluginService] internal static IChatGui Chat { get; private set; } = null!;
 
 
-
-    // ...and any other IPartyList, ITargetManager, etc. you need.
-
-    // 2) Your custom services or references
-    public static Configuration Config { get; private set; } = null!;
-    public static PluginCommands PluginCommands { get; private set; } = null!;
+    // Custom services
+    public Configuration Configuration { get; init; }
     public static DeepDungeonService DeepDungeonService { get; private set; } = null!;
     public static MobInfoService MobService { get; private set; } = null!;
     public static ESPService ESPService { get; private set; } = null!;
     public static ConfigWindow ConfigWindow { get; private set; } = null!;
     public static MainWindow MainWindow { get; private set; } = null!;
 
+    private readonly MobInfoService mobService;
+    private readonly DeepDungeonService deepDungeonService;
+    private readonly ESPService espService;
 
     public readonly WindowSystem WindowSystem = new("NecroLens");
 
-    public NecroLens(IDalamudPluginInterface? PluginInterface)
+    // Commands
+    private const string NecroLensCmd = "/necrolens";
+    private const string NecroLensCfgCmd = "/necrolenscfg";
+    private const string OpenChestCmd = "/openchest";
+    private const string PomanderCmd = "/pomander";
+
+    // Rate-limit the scans:
+    private DateTime lastScanTime = DateTime.MinValue;
+    private readonly TimeSpan scanInterval = TimeSpan.FromMilliseconds(1000);
+
+    public NecroLens(IDalamudPluginInterface PluginInterface, IFramework framework)
     {
-        //Plugin = this;
+        ILoggingService logger = new DalamudLoggingService(PluginLog);
+        Framework = framework;
 
-        ECommonsMain.Init(PluginInterface, this, Module.DalamudReflector);
+        Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        // Load NecroLens.Config
-        NecroLens.Config = NecroLens.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-        // CommandManager = new ICommandManager(); // Remove this line
+        ConfigWindow = new ConfigWindow(this);
+        MainWindow = new MainWindow(this);
 
-        // Initialize custom services once:
-        MobService = new MobInfoService();
-        DeepDungeonService = new DeepDungeonService();
-        //GameNetwork = new GameNetwork();
-
-        // Initialize other parts (windows, commands, etc.)
-        PluginCommands = new PluginCommands();
-        ConfigWindow = new ConfigWindow();
-        MainWindow = new MainWindow();
-
-        WindowSystem.AddWindow(MainWindow);
         WindowSystem.AddWindow(ConfigWindow);
+        WindowSystem.AddWindow(MainWindow);
+
+        //ECommonsMain.Init(PluginInterface, this, Module.DalamudReflector);
 
         // Initialize ESP service
-        ESPService = new ESPService();
-#if DEBUG
-        espTestService = new ESPTestService();
-#endif
-        NecroLens.PluginInterface.UiBuilder.Draw += DrawUI;
-        NecroLens.PluginInterface.UiBuilder.OpenConfigUi += ShowConfigWindow;
+        mobService = new MobInfoService(logger);
+        deepDungeonService = new DeepDungeonService(logger, Configuration, this, GameNetwork, DataManager, ClientState, mobService, ObjectTable, GameGui);
+        espService = new ESPService(logger, Configuration, this, ClientState, ObjectTable, deepDungeonService, Framework, mobService, GameGui );
+////#if DEBUG
+////        espTestService = new ESPTestService();
+////#endif
 
-        CultureInfo.DefaultThreadCurrentUICulture = NecroLens.ClientState.ClientLanguage switch
+        PluginInterface.UiBuilder.Draw += espService.OnDraw;
+        PluginInterface.UiBuilder.Draw += DrawUI;
+        Framework.Update += OnFrameworkUpdate;
+
+        // This adds a button to the plugin installer entry of this plugin which allows
+        // to toggle the display status of the configuration ui
+        PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUI;
+
+        // Adds another button that is doing the same but for the main ui of the plugin
+        PluginInterface.UiBuilder.OpenMainUi += ToggleMainUI;
+
+        CultureInfo.DefaultThreadCurrentUICulture = ClientState.ClientLanguage switch
         {
             ClientLanguage.French => CultureInfo.GetCultureInfo("fr"),
             ClientLanguage.German => CultureInfo.GetCultureInfo("de"),
             ClientLanguage.Japanese => CultureInfo.GetCultureInfo("ja"),
             _ => CultureInfo.GetCultureInfo("en")
         };
+
+        // Initialize commands
+        InitialiseCommands();
     }
 
     public void Dispose()
     {
         WindowSystem.RemoveAllWindows();
 
-        NecroLens.PluginInterface.UiBuilder.Draw -= DrawUI;
-        NecroLens.PluginInterface.UiBuilder.OpenConfigUi -= ShowConfigWindow;
+        ConfigWindow?.Dispose();
+        MainWindow?.Dispose();
+        ESPService?.Dispose();
+        DeepDungeonService?.Dispose();
+        MobService?.Dispose();
 
-        ConfigWindow.Dispose();
-        PluginCommands.Dispose();
-        MainWindow.Dispose();
-        ESPService.Dispose();
-        DeepDungeonService.Dispose();
-#if DEBUG
-        espTestService.Dispose();
-#endif
-        MobService.Dispose();
-        
-        ECommonsMain.Dispose();
+        //ECommonsMain.Dispose();
+
+//#if DEBUG
+//        espTestService?.Dispose();
+//#endif
+
+        CommandManager.RemoveHandler("/necrolens");
+        CommandManager.RemoveHandler("/necrolenscfg");
+        CommandManager.RemoveHandler("/openchest");
+        CommandManager.RemoveHandler("/pomander");
+    }
+
+    private void OnFrameworkUpdate(IFramework framework)
+    {
+        // Rate-limit the scans:
+        if (DateTime.UtcNow - lastScanTime >= scanInterval)
+        {
+            lastScanTime = DateTime.UtcNow;
+            PluginLog.Debug("Calling DoMapScan()");
+            espService.DoMapScan();
+            PluginLog.Debug("Finished DoMapScan()");
+        }
     }
 
     private void DrawUI()
     {
         WindowSystem.Draw();
     }
+    public void ToggleConfigUI() => ConfigWindow.Toggle();
+    public void ToggleMainUI() => MainWindow.Toggle();
 
-    public static void ShowMainWindow()
+    private void InitialiseCommands()
     {
-        MainWindow.IsOpen = true;
+        AddCommandHandler(NecroLensCmd, OnNecroLens, Strings.PluginCommands_OpenOverlay_Help);
+        AddCommandHandler(NecroLensCfgCmd, OnNecroLensCfg, Strings.PluginCommands_OpenConfig_Help);
+        AddCommandHandler(OpenChestCmd, OnOpenChest, Strings.PluginCommands_OpenChest_Help);
+        AddCommandHandler(PomanderCmd, OnPomander, "Try to use the pomander with given name");
     }
 
-    public static void CloseMainWindow()
+    private void AddCommandHandler(string command, IReadOnlyCommandInfo.HandlerDelegate handler, string helpMessage)
     {
-        MainWindow.IsOpen = false;
+        CommandManager.AddHandler(command, new CommandInfo(handler)
+        {
+            HelpMessage = helpMessage,
+            ShowInHelp = true
+        });
     }
 
-    public static void ShowConfigWindow()
+    private void OnNecroLens(string command, string args)
     {
-        ConfigWindow.IsOpen = true;
+        ToggleMainUI();
+    }
+    private void OnNecroLensCfg(string command, string args)
+    {
+        ToggleConfigUI();
+    }
+    private void OnOpenChest(string command, string args)
+    {
+        deepDungeonService.TryNearestOpenChest();
+    }
+    private void OnPomander(string command, string args)
+    {
+        deepDungeonService.OnPomanderCommand(args);
     }
 }

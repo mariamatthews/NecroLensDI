@@ -7,7 +7,9 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using NecroLens.Interface;
 using NecroLens.util;
 using Newtonsoft.Json;
 using static NecroLens.util.DeepDungeonUtil;
@@ -16,12 +18,16 @@ namespace NecroLens.Model;
 
 public partial class FloorDetails
 {
-    public readonly Dictionary<uint, Pomander> DoubleChests = new();
-    private readonly List<Pomander> floorEffects = [];
-    public readonly Dictionary<uint, FloorObject> FloorObjects = new();
-    public readonly List<uint> InteractionList = [];
+    private readonly Configuration configuration;
+    private readonly ILoggingService logger;
+    private readonly IGameGui gameGui;
 
-    private readonly List<Pomander> usedPomanders = [];
+    public readonly Dictionary<uint, Pomander> DoubleChests = new();
+    private readonly List<Pomander> floorEffects = new();
+    public readonly Dictionary<uint, FloorObject> FloorObjects = new();
+    public readonly List<uint> InteractionList = new();
+
+    private readonly List<Pomander> usedPomanders = new();
     public int CurrentFloor;
     public DateTime FloorStartTime;
     public bool FloorTransfer;
@@ -31,8 +37,18 @@ public partial class FloorDetails
 
     public int RespawnTime;
 
+    public FloorDetails(ILoggingService logger, Configuration configuration, IGameGui gameGui)
+    {
+        this.logger = logger;
+        //logger.LogInformation($"Initializing: ,  {nameof(FloorDetails)}");
+        this.configuration = configuration;
+        this.gameGui = gameGui;
+        //RespawnTime = configuration.RespawnTime;
+    }
+
     [GeneratedRegex("\\d+")]
     private static partial Regex FloorNumber();
+
 
     public void Clear()
     {
@@ -50,7 +66,7 @@ public partial class FloorDetails
     {
         if (FloorTransfer)
         {
-            NecroLens.PluginLog.Debug($"NextFloor: {CurrentFloor + 1}");
+            logger.LogDebug($"NextFloor: {CurrentFloor + 1}");
 
             // Reset
             InteractionList.Clear();
@@ -59,13 +75,13 @@ public partial class FloorDetails
 
             // Apply effects
             floorEffects.Clear();
-            if (usedPomanders.ContainsAny(Pomander.Affluence, Pomander.AffluenceProtomander))
+            if (ContainsAny(usedPomanders, Pomander.Affluence, Pomander.AffluenceProtomander))
                 floorEffects.Add(Pomander.Affluence);
 
-            if (usedPomanders.ContainsAny(Pomander.Alteration, Pomander.AlterationProtomander))
+            if (ContainsAny(usedPomanders, Pomander.Alteration, Pomander.AlterationProtomander))
                 floorEffects.Add(Pomander.Alteration);
 
-            if (usedPomanders.ContainsAny(Pomander.Flight, Pomander.FlightProtomander))
+            if (ContainsAny(usedPomanders, Pomander.Flight, Pomander.FlightProtomander))
                 floorEffects.Add(Pomander.Flight);
 
             usedPomanders.Clear();
@@ -85,7 +101,7 @@ public partial class FloorDetails
             var floor = int.Parse(FloorNumber().Match(floorText).Value);
             if (CurrentFloor != floor)
             {
-                NecroLens.PluginLog.Information("Floor number mismatch - adjusting");
+                logger.LogInformation("Floor number mismatch - adjusting");
                 CurrentFloor = floor;
             }
 
@@ -107,7 +123,7 @@ public partial class FloorDetails
 
     public void OnPomanderUsed(Pomander pomander)
     {
-        NecroLens.PluginLog.Debug($"Pomander ID: {pomander}");
+        logger.LogDebug($"Pomander ID: {pomander}");
 
         if (InEO)
         {
@@ -127,10 +143,10 @@ public partial class FloorDetails
 
     public DeepDungeonTrapStatus TrapStatus()
     {
-        if (floorEffects.ContainsAny(Pomander.Safety, Pomander.SafetyProtomander))
+        if (ContainsAny(floorEffects, Pomander.Safety, Pomander.SafetyProtomander))
             return DeepDungeonTrapStatus.Inactive;
 
-        if (floorEffects.ContainsAny(Pomander.Sight, Pomander.SightProtomander)) return DeepDungeonTrapStatus.Visible;
+        if (ContainsAny(floorEffects, Pomander.Sight, Pomander.SightProtomander)) return DeepDungeonTrapStatus.Visible;
 
         return DeepDungeonTrapStatus.Active;
     }
@@ -151,6 +167,12 @@ public partial class FloorDetails
         var time = (int)(now - FloorStartTime).TotalSeconds;
         if (now > NextRespawn) NextRespawn = now.AddSeconds(RespawnTime);
         return time;
+    }
+
+    private unsafe bool TryGetAddonByName<T>(string name, out T* addon) where T : unmanaged
+    {
+        addon = (T*)gameGui.GetAddonByName(name, 1);
+        return addon != null;
     }
 
     public void TrackFloorObjects(ESPObject espObj, int currentContentId)
@@ -188,7 +210,7 @@ public partial class FloorDetails
 
     public void DumpFloorObjects(int currentContentId)
     {
-        if (NecroLens.Config.OptInDataCollection)
+        if (configuration.OptInDataCollection)
         {
             var result = new Dictionary<uint, DataCollector.MobData>();
 
@@ -201,15 +223,15 @@ public partial class FloorDetails
                     ContentId = currentContentId,
                     Floor = CurrentFloor,
                     HitboxRadius = keyValuePair.Value.HitboxRadius,
-                    MoveTimes = [],     // TODO
-                    AggroDistances = [] // TODO
+                    MoveTimes = new Collection<float>(),     // TODO
+                    AggroDistances = new Collection<float>() // TODO
                 };
                 result.TryAdd(data.DataId, data);
             }
 
             var collector = new DataCollector
             {
-                Sender = NecroLens.Config.UniqueId!,
+                Sender = configuration.UniqueId!,
                 Party = NecroLens.PartyList.PartyId.ToString(),
                 Data = new Collection<DataCollector.MobData>(result.Values.ToList())
             };
@@ -220,7 +242,7 @@ public partial class FloorDetails
                                                    {
                                                        NullValueHandling = NullValueHandling.Ignore
                                                    });
-            NecroLens.PluginLog.Debug("Sending Data: \n" + json);
+            logger.LogDebug("Sending Data: \n" + json);
 
             Task.Factory.StartNew(async () =>
             {
@@ -232,7 +254,7 @@ public partial class FloorDetails
                 }
                 catch (Exception e)
                 {
-                    NecroLens.PluginLog.Debug(e, "Failed to send data to server");
+                    logger.LogDebug($"Failed to send data to server: {e.Message}");
                 }
             });
         }
@@ -246,5 +268,17 @@ public partial class FloorDetails
     public bool IsNextFloorWith(Pomander pomander)
     {
         return usedPomanders.Contains(pomander);
+    }
+
+    private bool ContainsAny(List<Pomander> list, params Pomander[] values)
+    {
+        foreach (var value in values)
+        {
+            if (list.Contains(value))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }

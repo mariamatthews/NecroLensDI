@@ -1,8 +1,8 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 
 namespace NecroLens.Model;
 
-[SuppressMessage("ReSharper", "InconsistentNaming")]
+//[SuppressMessage("ReSharper", "InconsistentNaming")]
 public class MobInfo
 {
     public uint Id { get; set; }

@@ -1,10 +1,10 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using NecroLens.Model;
 
 namespace NecroLens.util;
 
-[SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
+//[SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
 public class DeepDungeonContentInfo
 {
     public enum MimicChests

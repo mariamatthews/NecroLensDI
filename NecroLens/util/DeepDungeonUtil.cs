@@ -3,8 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
-using ECommons.DalamudServices;
-using ECommons.GameHelpers;
+using Dalamud.Plugin.Services;
 using NecroLens.Model;
 
 namespace NecroLens.util;
@@ -13,7 +12,12 @@ namespace NecroLens.util;
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 public static class DeepDungeonUtil
 {
-    public static ushort MapId => NecroLens.ClientState?.TerritoryType ?? 0;
+    private static IClientState ClientState => NecroLens.ClientState;
+    private static ICondition Condition => NecroLens.Condition;
+    private static IChatGui Chat => NecroLens.Chat;
+    private static IDataManager DataManager => NecroLens.DataManager;
+
+    public static ushort MapId => ClientState?.TerritoryType ?? 0;
     public static bool InDeepDungeon => InPotD || InHoH || InEO;
     public static bool InPotD => DataIds.PalaceOfTheDeadMapIds.Contains(MapId);
     public static bool InHoH => DataIds.HeavenOnHighMapIds.Contains(MapId);
@@ -33,7 +37,7 @@ public static class DeepDungeonUtil
         // checking for item penalty if not serenity
         if (pomander != Pomander.Serenity && pomander != Pomander.SerenityProtomander)
         {
-            var itemPenalty = Player.Status?.Where(s => s.StatusId == DataIds.ItemPenaltyStatusId);
+            var itemPenalty = ClientState.LocalPlayer?.StatusList?.Where(s => s.StatusId == DataIds.ItemPenaltyStatusId);
             usable = usable && (itemPenalty == null || !itemPenalty.Any());
         }
 
@@ -78,7 +82,7 @@ public static class DeepDungeonUtil
             return false;
         }
 
-        var sheet = NecroLens.DataManager.GetExcelSheet<Lumina.Excel.Sheets.DeepDungeonItem>();
+        var sheet = DataManager.GetExcelSheet<Lumina.Excel.Sheets.DeepDungeonItem>();
         if (sheet == null)
         {
             PrintChatMessage($"Failed to retrieve DeepDungeonItem sheet.");
@@ -132,6 +136,6 @@ public static class DeepDungeonUtil
                       .Append(msg).Build()
         };
 
-        Svc.Chat?.Print(message);
+        Chat?.Print(message);
     }
 }

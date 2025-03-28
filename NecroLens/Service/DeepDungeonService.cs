@@ -5,290 +5,369 @@ using System.Runtime.InteropServices;
 using System.Timers;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.Network;
-using ECommons.Automation;
-using ECommons.Automation.NeoTaskManager;
+using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
+using NecroLens.Interface;
 using NecroLens.Model;
 using NecroLens.util;
 using static NecroLens.util.DeepDungeonUtil;
 using GameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
+using System.Threading.Tasks;
+using Task = System.Threading.Tasks.Task;
+using static FFXIVClientStructs.FFXIV.Client.Graphics.Render.ModelRenderer;
 
-namespace NecroLens.Service;
-
-/**
- * Tracks the progress when inside a DeepDungeon.
- */
-public class DeepDungeonService : IDisposable
+namespace NecroLens.Service
 {
-    private readonly Configuration conf;
-    private readonly Timer floorTimer;
-    public readonly Dictionary<int, int> FloorTimes;
-    public int CurrentContentId;
-    public DeepDungeonContentInfo.DeepDungeonFloorSetInfo? FloorSetInfo;
-    public bool Ready;
-    private readonly TaskManager taskManager;
-    public readonly FloorDetails FloorDetails;
-    public readonly Dictionary<Pomander, string> PomanderNames;
-
-    public DeepDungeonService()
+    public class DeepDungeonService : IDisposable, IDeepDungeonService
     {
-        NecroLens.GameNetwork.NetworkMessage += NetworkMessage;
-        FloorTimes = new Dictionary<int, int>();
-        floorTimer = new Timer();
-        floorTimer.Elapsed += OnTimerUpdate;
-        floorTimer.Interval = 1000;
-        Ready = false;
-        conf = NecroLens.Config;
-        FloorDetails = new FloorDetails();
-        taskManager = new TaskManager(new TaskManagerConfiguration
+        private readonly ILoggingService logger;
+        private readonly Configuration configuration;
+        private readonly IMainUIManager mainUIManager;
+        private readonly IClientState clientState;
+        private readonly IMobInfoService mobService;
+        private readonly IObjectTable objectTable;
+        private readonly IGameNetwork gameNetwork;
+        private readonly IGameGui gameGui;
+        private readonly Dictionary<Pomander, string> pomanderNames = new();
+        public IReadOnlyDictionary<Pomander, string> PomanderNames => pomanderNames;
+
+        private readonly Dictionary<int, int> floorTimes = new();
+        public Dictionary<int, int> FloorTimes => floorTimes;
+        public FloorDetails FloorDetails { get; }
+
+        private readonly Timer floorTimer;
+
+        public int CurrentContentId { get; private set; }
+        public DeepDungeonContentInfo.DeepDungeonFloorSetInfo? FloorSetInfo;
+
+        public bool Ready;
+
+        private readonly TaskManager taskManager;
+
+        public DeepDungeonService(
+            ILoggingService logger,
+            Configuration configuration,
+            IMainUIManager mainUIManager,
+            IGameNetwork gameNetwork,
+            IDataManager dataManager,
+            IClientState clientState,
+            IMobInfoService mobService,
+            IObjectTable objectTable,
+            IGameGui gameGui)
         {
-            TimeoutSilently = true
-        });
-        PomanderNames = new Dictionary<Pomander, string>();
-        
-        foreach (var pomander in NecroLens.DataManager.GetExcelSheet<DeepDungeonItem>(NecroLens.ClientState.ClientLanguage)!.Skip(1))
-        {
-            PomanderNames[(Pomander)pomander.RowId] = pomander.Name.ToString();
-        }
-    }
+            this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            this.configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            this.mainUIManager = mainUIManager ?? throw new ArgumentNullException(nameof(mainUIManager));
+            this.clientState = clientState ?? throw new ArgumentNullException(nameof(clientState));
+            this.mobService = mobService ?? throw new ArgumentNullException(nameof(mobService));
+            this.objectTable = objectTable ?? throw new ArgumentNullException(nameof(objectTable));
+            this.gameNetwork = gameNetwork ?? throw new ArgumentNullException(nameof(gameNetwork));
+            this.gameGui = gameGui ?? throw new ArgumentNullException(nameof(gameGui));
 
-    public void Dispose()
-    {
-        NecroLens.GameNetwork.NetworkMessage -= NetworkMessage;
-    }
+            gameNetwork.NetworkMessage += NetworkMessage;
 
-    private void EnterDeepDungeon(int contentId, DeepDungeonContentInfo.DeepDungeonFloorSetInfo info)
-    {
-        FloorSetInfo = info;
-        CurrentContentId = contentId;
-        NecroLens.PluginLog.Debug($"Entering ContentID {CurrentContentId}");
-
-        FloorTimes.Clear();
-
-        NecroLens.MobService.TryReloadIfEmpty();
-
-        for (var i = info.StartFloor; i < info.StartFloor + 10; i++)
-            FloorTimes[i] = 0;
-
-        FloorDetails.CurrentFloor = info.StartFloor - 1; // NextFloor() adds 1
-        FloorDetails.RespawnTime = info.RespawnTime;
-        FloorDetails.FloorTransfer = true;
-        FloorDetails.NextFloor();
-
-        if (NecroLens.Config.AutoOpenOnEnter)
-            NecroLens.ShowMainWindow();
-
-        floorTimer.Start();
-        Ready = true;
-    }
-
-    private void ExitDeepDungeon()
-    {
-        NecroLens.PluginLog.Debug($"ContentID {CurrentContentId} - Exiting");
-
-        FloorDetails.DumpFloorObjects(CurrentContentId);
-
-        floorTimer.Stop();
-        FloorSetInfo = null;
-        FloorDetails.Clear();
-        Ready = false;
-        NecroLens.CloseMainWindow();
-    }
-
-    private void OnTimerUpdate(object? sender, ElapsedEventArgs e)
-    {
-        if (!InDeepDungeon)
-        {
-            NecroLens.PluginLog.Debug("Failsafe exit");
-            ExitDeepDungeon();
-        }
-
-        // If the plugin is loaded mid-dungeon then verify the floor
-        if (!FloorDetails.FloorVerified)
-            FloorDetails.VerifyFloorNumber();
-
-        var time = FloorDetails.UpdateFloorTime();
-        FloorTimes[FloorDetails.CurrentFloor] = time;
-    }
-
-    private void NetworkMessage(
-        IntPtr dataPtr, ushort opCode, uint sourceActorId, uint targetActorId, NetworkMessageDirection direction)
-    {
-        if (direction == NetworkMessageDirection.ZoneDown)
-        {
-            switch (opCode)
+            floorTimer = new Timer
             {
-                case (int)ServerZoneIpcType.SystemLogMessage:
-                    OnSystemLogMessage(dataPtr, ReadNumber(dataPtr, 4, 4));
-                    break;
-                case (int)ServerZoneIpcType.ActorControlSelf:
-                    OnActorControlSelf(dataPtr);
-                    break;
-            }
-        }
-    }
+                Interval = 1000
+            };
+            floorTimer.Elapsed += OnTimerUpdate;
 
-    private void OnActorControlSelf(IntPtr dataPtr)
-    {
-        // OnDirectorUpdate
-        if (Marshal.ReadByte(dataPtr) == DataIds.ActorControlSelfDirectorUpdate)
-        {
-            switch (Marshal.ReadByte(dataPtr, 8))
+            Ready = false;
+
+            FloorDetails = new FloorDetails(logger, configuration, gameGui);
+
+            taskManager = new TaskManager();
+            // Remove the line causing the error as TaskManager does not have a DefaultConfiguration property
+            // taskManager.DefaultConfiguration.TimeoutSilently = true;
+
+            var sheet = dataManager.GetExcelSheet<DeepDungeonItem>(clientState.ClientLanguage);
+            if (sheet != null)
             {
-                // OnDutyCommenced
-                case DataIds.DirectorUpdateDutyCommenced:
+                foreach (var pomander in sheet.Skip(1))
                 {
-                    var contentId = ReadNumber(dataPtr, 4, 2);
-                    if (!Ready && DeepDungeonContentInfo.ContentInfo.TryGetValue(contentId, out var info))
-                        EnterDeepDungeon(contentId, info);
-                    break;
+                    pomanderNames[(Pomander)pomander.RowId] = pomander.Name.ToString();
                 }
-                // OnDutyRecommenced
-                case DataIds.DirectorUpdateDutyRecommenced:
-                    if (Ready && FloorDetails.FloorTransfer)
-                    {
-                        FloorDetails.NextFloor();
-                    }
-
-                    break;
             }
         }
-    }
 
-    private void OnSystemLogMessage(IntPtr dataPtr, int logId)
-    {
-        if (InDeepDungeon)
+        private void EnterDeepDungeon(int contentId, DeepDungeonContentInfo.DeepDungeonFloorSetInfo info)
         {
-            switch ((uint)logId)
+            FloorSetInfo = info;
+            CurrentContentId = contentId;
+            logger.LogDebug($"Entering ContentID {CurrentContentId}");
+
+            FloorTimes.Clear();
+
+            mobService.TryReloadIfEmpty();
+
+            for (var i = info.StartFloor; i < info.StartFloor + 10; i++)
+                FloorTimes[i] = 0;
+
+            FloorDetails.CurrentFloor = info.StartFloor - 1; // NextFloor() adds 1
+            FloorDetails.RespawnTime = info.RespawnTime;
+            FloorDetails.FloorTransfer = true;
+            FloorDetails.NextFloor();
+
+            if (configuration.AutoOpenOnEnter)
+                mainUIManager.ToggleMainUI();
+
+            floorTimer.Start();
+            Ready = true;
+        }
+
+        private void ExitDeepDungeon()
+        {
+            logger.LogDebug($"ContentID {CurrentContentId} - Exiting");
+
+            FloorDetails.DumpFloorObjects(CurrentContentId);
+
+            floorTimer.Stop();
+            FloorSetInfo = null;
+            FloorDetails.Clear();
+            Ready = false;
+
+            mainUIManager.ToggleMainUI();
+        }
+
+        private void OnTimerUpdate(object? sender, ElapsedEventArgs e)
+        {
+            if (!InDeepDungeon)
             {
-                case DataIds.SystemLogPomanderUsed:
-                    FloorDetails.OnPomanderUsed((Pomander)Marshal.ReadByte(dataPtr, 16));
-                    break;
-                case DataIds.SystemLogDutyEnded:
-                    ExitDeepDungeon();
-                    break;
-                case DataIds.SystemLogTransferenceInitiated:
-                    FloorDetails.FloorTransfer = true;
-                    FloorDetails.DumpFloorObjects(CurrentContentId);
-                    FloorDetails.FloorObjects.Clear();
-                    break;
-                case 0x1C6A:
-                case 0x1C6B:
-                case 0x1C6C:
-                    FloorDetails.HoardFound = true;
-                    break;
-                case 0x1C36:
-                case 0x23F8:
-                // case 0x282F: // Demiclone
-                    var pomander = (Pomander)Marshal.ReadByte(dataPtr, 12);
-                    if (pomander > 0)
-                    {
-                        var player = NecroLens.ClientState.LocalPlayer!;
-                        var chest = NecroLens.ObjectTable
-                                    .Where(o => o.DataId == DataIds.GoldChest)
-                                    .FirstOrDefault(o => o.Position.Distance2D(player.Position) <= 4.6f);
-                        if (chest != null)
+                logger.LogDebug("Failsafe exit");
+                ExitDeepDungeon();
+            }
+
+            if (!FloorDetails.FloorVerified)
+                FloorDetails.VerifyFloorNumber();
+
+            var time = FloorDetails.UpdateFloorTime();
+            FloorTimes[FloorDetails.CurrentFloor] = time;
+        }
+
+        private void NetworkMessage(
+            IntPtr dataPtr, ushort opCode, uint sourceActorId, uint targetActorId, NetworkMessageDirection direction)
+        {
+            if (direction == NetworkMessageDirection.ZoneDown)
+            {
+                switch (opCode)
+                {
+                    case (int)ServerZoneIpcType.SystemLogMessage:
+                        OnSystemLogMessage(dataPtr, ReadNumber(dataPtr, 4, 4));
+                        break;
+                    case (int)ServerZoneIpcType.ActorControlSelf:
+                        OnActorControlSelf(dataPtr);
+                        break;
+                }
+            }
+        }
+
+        private void OnActorControlSelf(IntPtr dataPtr)
+        {
+            if (Marshal.ReadByte(dataPtr) == DataIds.ActorControlSelfDirectorUpdate)
+            {
+                switch (Marshal.ReadByte(dataPtr, 8))
+                {
+                    case DataIds.DirectorUpdateDutyCommenced:
                         {
-                            FloorDetails.DoubleChests[chest.EntityId] = pomander;
+                            var contentId = ReadNumber(dataPtr, 4, 2);
+                            if (!Ready && DeepDungeonContentInfo.ContentInfo.TryGetValue(contentId, out var info))
+                                EnterDeepDungeon(contentId, info);
+                            break;
+                        }
+                    case DataIds.DirectorUpdateDutyRecommenced:
+                        if (Ready && FloorDetails.FloorTransfer)
+                        {
+                            FloorDetails.NextFloor();
+                        }
+
+                        break;
+                }
+            }
+        }
+
+        private void OnSystemLogMessage(IntPtr dataPtr, int logId)
+        {
+            if (InDeepDungeon)
+            {
+                switch ((uint)logId)
+                {
+                    case DataIds.SystemLogPomanderUsed:
+                        FloorDetails.OnPomanderUsed((Pomander)Marshal.ReadByte(dataPtr, 16));
+                        break;
+                    case DataIds.SystemLogDutyEnded:
+                        ExitDeepDungeon();
+                        break;
+                    case DataIds.SystemLogTransferenceInitiated:
+                        FloorDetails.FloorTransfer = true;
+                        FloorDetails.DumpFloorObjects(CurrentContentId);
+                        FloorDetails.FloorObjects.Clear();
+                        break;
+                    case 0x1C6A:
+                    case 0x1C6B:
+                    case 0x1C6C:
+                        FloorDetails.HoardFound = true;
+                        break;
+                    case 0x1C36:
+                    case 0x23F8:
+                        var pomander = (Pomander)Marshal.ReadByte(dataPtr, 12);
+                        if (pomander > 0)
+                        {
+                            var player = clientState.LocalPlayer;
+                            if (player != null)
+                            {
+                                var chest = objectTable
+                                            .Where(o => o.DataId == DataIds.GoldChest)
+                                            .FirstOrDefault(o => o.Position.Distance2D(player.Position) <= 4.6f);
+                                if (chest != null)
+                                {
+                                    FloorDetails.DoubleChests[chest.EntityId] = pomander;
+                                }
+                            }
+                        }
+
+                        break;
+                }
+            }
+        }
+
+        private static int ReadNumber(IntPtr dataPtr, int offset, int size)
+        {
+            var bytes = new byte[4];
+            Marshal.Copy(dataPtr + offset, bytes, 0, size);
+            return BitConverter.ToInt32(bytes);
+        }
+
+        private bool CheckChestOpenSafe(ESPObject.ESPType type)
+        {
+            var info = FloorSetInfo;
+            var unsafeChest = false;
+            if (info != null)
+            {
+                unsafeChest = (info.MimicChests == DeepDungeonContentInfo.MimicChests.Silver &&
+                               type == ESPObject.ESPType.SilverChest) ||
+                              (info.MimicChests == DeepDungeonContentInfo.MimicChests.Gold &&
+                               type == ESPObject.ESPType.GoldChest);
+            }
+
+            return !unsafeChest || (unsafeChest && configuration.OpenUnsafeChests);
+        }
+
+        public unsafe void TryInteract(ESPObject espObj)
+        {
+            var player = clientState.LocalPlayer;
+            if (player != null && (player.StatusFlags & StatusFlags.InCombat) == 0 && configuration.OpenChests && espObj.IsChest())
+            {
+                var type = espObj.Type;
+
+                if (!configuration.OpenBronzeCoffers && type == ESPObject.ESPType.BronzeChest) return;
+                if (!configuration.OpenSilverCoffers && type == ESPObject.ESPType.SilverChest) return;
+                if (!configuration.OpenGoldCoffers && type == ESPObject.ESPType.GoldChest) return;
+                if (!configuration.OpenHoards && type == ESPObject.ESPType.AccursedHoardCoffer) return;
+
+                if (type == ESPObject.ESPType.SilverChest && player.CurrentHp <= player.MaxHp * 0.77) return;
+
+                if (CheckChestOpenSafe(type) && espObj.Distance() <= espObj.InteractionDistance()
+                                             && !FloorDetails.InteractionList.Contains(espObj.GameObject.EntityId))
+                {
+                    TargetSystem.Instance()->InteractWithObject((GameObject*)espObj.GameObject.Address);
+                    FloorDetails.InteractionList.Add(espObj.GameObject.EntityId);
+                }
+            }
+        }
+
+        public unsafe void TryNearestOpenChest()
+        {
+            foreach (var obj in objectTable)
+                if (obj.IsValid())
+                {
+                    var dataId = obj.DataId;
+                    if (DataIds.BronzeChestIDs.Contains(dataId) || DataIds.SilverChest == dataId ||
+                        DataIds.GoldChest == dataId || DataIds.AccursedHoardCoffer == dataId)
+                    {
+                        var espObj = new ESPObject(obj, clientState, configuration, this, logger, null);
+                        if (CheckChestOpenSafe(espObj.Type) && espObj.Distance() <= espObj.InteractionDistance())
+                        {
+                            TargetSystem.Instance()->InteractWithObject((GameObject*)espObj.GameObject.Address);
+                            break;
                         }
                     }
-
-                    break;
-            }
+                }
         }
-    }
 
-    private static int ReadNumber(IntPtr dataPtr, int offset, int size)
-    {
-        var bytes = new byte[4];
-        Marshal.Copy(dataPtr + offset, bytes, 0, size);
-        return BitConverter.ToInt32(bytes);
-    }
-
-    private bool CheckChestOpenSafe(ESPObject.ESPType type)
-    {
-        var info = NecroLens.DeepDungeonService.FloorSetInfo;
-        var unsafeChest = false;
-        if (info != null)
+        private unsafe bool TryGetAddonByName<T>(string name, out T* addon) where T : unmanaged
         {
-            unsafeChest = (info.MimicChests == DeepDungeonContentInfo.MimicChests.Silver &&
-                           type == ESPObject.ESPType.SilverChest) ||
-                          (info.MimicChests == DeepDungeonContentInfo.MimicChests.Gold &&
-                           type == ESPObject.ESPType.GoldChest);
+            addon = (T*)this.gameGui.GetAddonByName(name, 1);
+            return addon != null;
         }
 
-        return !unsafeChest || (unsafeChest && conf.OpenUnsafeChests);
-    }
-
-    internal unsafe void TryInteract(ESPObject espObj)
-    {
-        var player = NecroLens.ClientState.LocalPlayer!;
-        if ((player.StatusFlags & StatusFlags.InCombat) == 0 && conf.OpenChests && espObj.IsChest())
+        private unsafe bool IsAddonReady(AtkUnitBase* addon)
         {
-            var type = espObj.Type;
-
-            if (!conf.OpenBronzeCoffers && type == ESPObject.ESPType.BronzeChest) return;
-            if (!conf.OpenSilverCoffers && type == ESPObject.ESPType.SilverChest) return;
-            if (!conf.OpenGoldCoffers && type == ESPObject.ESPType.GoldChest) return;
-            if (!conf.OpenHoards && type == ESPObject.ESPType.AccursedHoardCoffer) return;
-
-            // We dont want to kill the player
-            if (type == ESPObject.ESPType.SilverChest && player.CurrentHp <= player.MaxHp * 0.77) return;
-
-            if (CheckChestOpenSafe(type) && espObj.Distance() <= espObj.InteractionDistance()
-                                         && !FloorDetails.InteractionList.Contains(espObj.GameObject.EntityId))
-            {
-                TargetSystem.Instance()->InteractWithObject((GameObject*)espObj.GameObject.Address);
-                FloorDetails.InteractionList.Add(espObj.GameObject.EntityId);
-            }
+            return addon != null && addon->IsVisible;
         }
-    }
 
-    public unsafe void TryNearestOpenChest()
-    {
-        // Checks every object to be a chest and try to open the  
-        foreach (var obj in NecroLens.ObjectTable)
-            if (obj.IsValid())
+        public void OnPomanderCommand(string pomanderName)
+        {
+            if (pomanderName == "Flight")
             {
-                var dataId = obj.DataId;
-                if (DataIds.BronzeChestIDs.Contains(dataId) || DataIds.SilverChest == dataId ||
-                    DataIds.GoldChest == dataId || DataIds.AccursedHoardCoffer == dataId)
+                if (TryFindPomanderByName("Flight", out var flight) && IsPomanderUsable(flight))
                 {
-                    var espObj = new ESPObject(obj);
-                    if (CheckChestOpenSafe(espObj.Type) && espObj.Distance() <= espObj.InteractionDistance())
+                    PrintChatMessage("Using Flight Pomander");
+                    unsafe
                     {
-                        TargetSystem.Instance()->InteractWithObject((GameObject*)espObj.GameObject.Address);
-                        break;
+                        if (!TryGetAddonByName<AtkUnitBase>("DeepDungeonStatus", out _))
+                        {
+                            AgentDeepDungeonStatus.Instance()->AgentInterface.Show();
+                        }
+
+                        Task.Run(() =>
+                        {
+                            unsafe
+                            {
+                                TryGetAddonByName<AtkUnitBase>("DeepDungeonStatus", out var addon);
+                                if (IsAddonReady(addon))
+                                {
+                                    // Replacing Callback.Fire with the correct method to use the addon
+                                    Task.Run(() =>
+                                    {
+                                        unsafe
+                                        {
+                                            TryGetAddonByName<AtkUnitBase>("DeepDungeonStatus", out var addon);
+                                            if (IsAddonReady(addon))
+                                            {
+                                                // Correcting the arguments for FireCallback
+                                                var atkValues = stackalloc AtkValue[2];
+                                                atkValues[0] = new AtkValue { Type = FFXIVClientStructs.FFXIV.Component.GUI.ValueType.Int, Int = 11 };
+                                                atkValues[1] = new AtkValue { Type = FFXIVClientStructs.FFXIV.Component.GUI.ValueType.Int, Int = (int)flight };
+                                                addon->FireCallback(1, atkValues);
+                                            }
+                                        }
+                                    }).Wait();
+                                }
+                            }
+                        }).Wait();
                     }
                 }
             }
-    }
-
-    public unsafe void OnPomanderCommand(string pomanderName)
-    {
-        if (TryFindPomanderByName(pomanderName, out var pomander) && IsPomanderUsable(pomander))
-        {
-            PrintChatMessage($"Using found pomander: {pomander}");
-            if (!TryGetAddonByName<AtkUnitBase>("DeepDungeonStatus", out _))
-            {
-                AgentDeepDungeonStatus.Instance()->AgentInterface.Show();
-            }
-
-            taskManager.Enqueue(() => TryGetAddonByName<AtkUnitBase>("DeepDungeonStatus", out var addon) &&
-                                      IsAddonReady(addon));
-            taskManager.Enqueue(() =>
-            {
-                TryGetAddonByName<AtkUnitBase>("DeepDungeonStatus", out var addon);
-                Callback.Fire(addon, true, 11, (int)pomander);
-            });
         }
-    }
 
-    public void TrackFloorObjects(ESPObject espObj)
-    {
-        FloorDetails.TrackFloorObjects(espObj, CurrentContentId);
+
+
+        public void TrackFloorObjects(ESPObject espObj)
+        {
+            FloorDetails.TrackFloorObjects(espObj, CurrentContentId);
+        }
+
+        public void Dispose()
+        {
+            gameNetwork.NetworkMessage -= NetworkMessage;
+            floorTimer?.Stop();
+            floorTimer?.Dispose();
+            mobService?.Dispose();
+            GC.SuppressFinalize(this);
+        }
     }
 }
