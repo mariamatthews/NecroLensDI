@@ -17,7 +17,7 @@ NecroLensDI allows you to explore Deep Dungeons (Palace of the Dead, Heaven on H
 
 ## Installation
 
-For installation instructions, please see the [custom plugin repository](https://github.com/mariamatthews/NecroLensDI).
+For installation instructions, please see the [DalamudPlugins](https://github.com/mariamatthews/DalamudPlugins).
 
 ---
 

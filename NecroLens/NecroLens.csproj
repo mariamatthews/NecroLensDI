@@ -2,7 +2,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <Authors>mariamatthews</Authors>
-        <Version>1.0.7.3</Version>
+        <Version>1.7.2.0</Version>
         <Description>Enhanced NecroLens plugin with Dependency Injection for Dalamud.</Description>
         <PackageProjectUrl>https://github.com/mariamatthews/NecroLensDI</PackageProjectUrl>
     </PropertyGroup>
