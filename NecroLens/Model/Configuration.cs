@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics.CodeAnalysis;
 using Dalamud.Configuration;
 
@@ -57,6 +57,6 @@ public class Configuration : IPluginConfiguration
 
     public void Save()
     {
-        PluginInterface.SavePluginConfig(this);
+        NecroLens.PluginInterface.SavePluginConfig(this);
     }
 }

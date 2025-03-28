@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -50,7 +50,7 @@ public partial class FloorDetails
     {
         if (FloorTransfer)
         {
-            PluginLog.Debug($"NextFloor: {CurrentFloor + 1}");
+            NecroLens.PluginLog.Debug($"NextFloor: {CurrentFloor + 1}");
 
             // Reset
             InteractionList.Clear();
@@ -85,7 +85,7 @@ public partial class FloorDetails
             var floor = int.Parse(FloorNumber().Match(floorText).Value);
             if (CurrentFloor != floor)
             {
-                PluginLog.Information("Floor number mismatch - adjusting");
+                NecroLens.PluginLog.Information("Floor number mismatch - adjusting");
                 CurrentFloor = floor;
             }
 
@@ -107,7 +107,7 @@ public partial class FloorDetails
 
     public void OnPomanderUsed(Pomander pomander)
     {
-        PluginLog.Debug($"Pomander ID: {pomander}");
+        NecroLens.PluginLog.Debug($"Pomander ID: {pomander}");
 
         if (InEO)
         {
@@ -188,7 +188,7 @@ public partial class FloorDetails
 
     public void DumpFloorObjects(int currentContentId)
     {
-        if (Config.OptInDataCollection)
+        if (NecroLens.Config.OptInDataCollection)
         {
             var result = new Dictionary<uint, DataCollector.MobData>();
 
@@ -209,8 +209,8 @@ public partial class FloorDetails
 
             var collector = new DataCollector
             {
-                Sender = Config.UniqueId!,
-                Party = PartyList.PartyId.ToString(),
+                Sender = NecroLens.Config.UniqueId!,
+                Party = NecroLens.PartyList.PartyId.ToString(),
                 Data = new Collection<DataCollector.MobData>(result.Values.ToList())
             };
 
@@ -220,7 +220,7 @@ public partial class FloorDetails
                                                    {
                                                        NullValueHandling = NullValueHandling.Ignore
                                                    });
-            PluginLog.Debug("Sending Data: \n" + json);
+            NecroLens.PluginLog.Debug("Sending Data: \n" + json);
 
             Task.Factory.StartNew(async () =>
             {
@@ -232,7 +232,7 @@ public partial class FloorDetails
                 }
                 catch (Exception e)
                 {
-                    PluginLog.Debug(e, "Failed to send data to server");
+                    NecroLens.PluginLog.Debug(e, "Failed to send data to server");
                 }
             });
         }

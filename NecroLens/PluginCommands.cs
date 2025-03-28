@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Dalamud.Game.Command;
 using NecroLens.Data;
 
@@ -8,29 +8,29 @@ public class PluginCommands : IDisposable
 {
     public PluginCommands()
     {
-        CommandManager.AddHandler("/necrolens",
-            new CommandInfo((_, _) => Plugin.ShowMainWindow())
+        NecroLens.CommandManager.AddHandler("/necrolens",
+            new CommandInfo((_, _) => NecroLens.ShowMainWindow())
             {
                 HelpMessage = Strings.PluginCommands_OpenOverlay_Help,
                 ShowInHelp = true
             });
 
-        CommandManager.AddHandler("/necrolenscfg",
-            new CommandInfo((_, _) => Plugin.ShowConfigWindow())
+        NecroLens.CommandManager.AddHandler("/necrolenscfg",
+            new CommandInfo((_, _) => NecroLens.ShowConfigWindow())
             {
                 HelpMessage = Strings.PluginCommands_OpenConfig_Help,
                 ShowInHelp = true
             });
-        
-        CommandManager.AddHandler("/openchest",
-            new CommandInfo((_, _) => DungeonService.TryNearestOpenChest())
+
+        NecroLens.CommandManager.AddHandler("/openchest",
+            new CommandInfo((_, _) => NecroLens.DeepDungeonService.TryNearestOpenChest())
             {
                 HelpMessage = Strings.PluginCommands_OpenChest_Help,
                 ShowInHelp = true
             });
-        
-        CommandManager.AddHandler("/pomander",
-            new CommandInfo((_, args) => DungeonService.OnPomanderCommand(args))
+
+        NecroLens.CommandManager.AddHandler("/pomander",
+            new CommandInfo((_, args) => NecroLens.DeepDungeonService.OnPomanderCommand(args))
             {
                 HelpMessage = "Try to use the pomander with given name",
                 ShowInHelp = true
@@ -39,9 +39,10 @@ public class PluginCommands : IDisposable
 
     public void Dispose()
     {
-        CommandManager.RemoveHandler("/necrolens");
-        CommandManager.RemoveHandler("/necrolenscfg");
-        CommandManager.RemoveHandler("/openchest");
-        CommandManager.RemoveHandler("/pomander");
+        NecroLens.CommandManager.RemoveHandler("/necrolens");
+        NecroLens.CommandManager.RemoveHandler("/necrolenscfg");
+        NecroLens.CommandManager.RemoveHandler("/openchest");
+        NecroLens.CommandManager.RemoveHandler("/pomander");
+        GC.SuppressFinalize(this);
     }
 }

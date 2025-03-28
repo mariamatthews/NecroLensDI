@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -35,13 +35,13 @@ public class DeepDungeonService : IDisposable
 
     public DeepDungeonService()
     {
-        GameNetwork.NetworkMessage += NetworkMessage;
+        NecroLens.GameNetwork.NetworkMessage += NetworkMessage;
         FloorTimes = new Dictionary<int, int>();
         floorTimer = new Timer();
         floorTimer.Elapsed += OnTimerUpdate;
         floorTimer.Interval = 1000;
         Ready = false;
-        conf = Config;
+        conf = NecroLens.Config;
         FloorDetails = new FloorDetails();
         taskManager = new TaskManager(new TaskManagerConfiguration
         {
@@ -49,7 +49,7 @@ public class DeepDungeonService : IDisposable
         });
         PomanderNames = new Dictionary<Pomander, string>();
         
-        foreach (var pomander in DataManager.GetExcelSheet<DeepDungeonItem>(ClientState.ClientLanguage)!.Skip(1))
+        foreach (var pomander in NecroLens.DataManager.GetExcelSheet<DeepDungeonItem>(NecroLens.ClientState.ClientLanguage)!.Skip(1))
         {
             PomanderNames[(Pomander)pomander.RowId] = pomander.Name.ToString();
         }
@@ -57,18 +57,18 @@ public class DeepDungeonService : IDisposable
 
     public void Dispose()
     {
-        GameNetwork.NetworkMessage -= NetworkMessage;
+        NecroLens.GameNetwork.NetworkMessage -= NetworkMessage;
     }
 
     private void EnterDeepDungeon(int contentId, DeepDungeonContentInfo.DeepDungeonFloorSetInfo info)
     {
         FloorSetInfo = info;
         CurrentContentId = contentId;
-        PluginLog.Debug($"Entering ContentID {CurrentContentId}");
+        NecroLens.PluginLog.Debug($"Entering ContentID {CurrentContentId}");
 
         FloorTimes.Clear();
 
-        MobService.TryReloadIfEmpty();
+        NecroLens.MobService.TryReloadIfEmpty();
 
         for (var i = info.StartFloor; i < info.StartFloor + 10; i++)
             FloorTimes[i] = 0;
@@ -78,8 +78,8 @@ public class DeepDungeonService : IDisposable
         FloorDetails.FloorTransfer = true;
         FloorDetails.NextFloor();
 
-        if (Config.AutoOpenOnEnter)
-            Plugin.ShowMainWindow();
+        if (NecroLens.Config.AutoOpenOnEnter)
+            NecroLens.ShowMainWindow();
 
         floorTimer.Start();
         Ready = true;
@@ -87,7 +87,7 @@ public class DeepDungeonService : IDisposable
 
     private void ExitDeepDungeon()
     {
-        PluginLog.Debug($"ContentID {CurrentContentId} - Exiting");
+        NecroLens.PluginLog.Debug($"ContentID {CurrentContentId} - Exiting");
 
         FloorDetails.DumpFloorObjects(CurrentContentId);
 
@@ -95,14 +95,14 @@ public class DeepDungeonService : IDisposable
         FloorSetInfo = null;
         FloorDetails.Clear();
         Ready = false;
-        Plugin.CloseMainWindow();
+        NecroLens.CloseMainWindow();
     }
 
     private void OnTimerUpdate(object? sender, ElapsedEventArgs e)
     {
         if (!InDeepDungeon)
         {
-            PluginLog.Debug("Failsafe exit");
+            NecroLens.PluginLog.Debug("Failsafe exit");
             ExitDeepDungeon();
         }
 
@@ -186,8 +186,8 @@ public class DeepDungeonService : IDisposable
                     var pomander = (Pomander)Marshal.ReadByte(dataPtr, 12);
                     if (pomander > 0)
                     {
-                        var player = ClientState.LocalPlayer!;
-                        var chest = ObjectTable
+                        var player = NecroLens.ClientState.LocalPlayer!;
+                        var chest = NecroLens.ObjectTable
                                     .Where(o => o.DataId == DataIds.GoldChest)
                                     .FirstOrDefault(o => o.Position.Distance2D(player.Position) <= 4.6f);
                         if (chest != null)
@@ -210,7 +210,7 @@ public class DeepDungeonService : IDisposable
 
     private bool CheckChestOpenSafe(ESPObject.ESPType type)
     {
-        var info = DungeonService.FloorSetInfo;
+        var info = NecroLens.DeepDungeonService.FloorSetInfo;
         var unsafeChest = false;
         if (info != null)
         {
@@ -225,7 +225,7 @@ public class DeepDungeonService : IDisposable
 
     internal unsafe void TryInteract(ESPObject espObj)
     {
-        var player = ClientState.LocalPlayer!;
+        var player = NecroLens.ClientState.LocalPlayer!;
         if ((player.StatusFlags & StatusFlags.InCombat) == 0 && conf.OpenChests && espObj.IsChest())
         {
             var type = espObj.Type;
@@ -250,7 +250,7 @@ public class DeepDungeonService : IDisposable
     public unsafe void TryNearestOpenChest()
     {
         // Checks every object to be a chest and try to open the  
-        foreach (var obj in ObjectTable)
+        foreach (var obj in NecroLens.ObjectTable)
             if (obj.IsValid())
             {
                 var dataId = obj.DataId;

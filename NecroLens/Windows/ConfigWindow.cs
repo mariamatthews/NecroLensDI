@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Drawing;
 using Dalamud.Interface.Windowing;
@@ -15,7 +15,7 @@ public class ConfigWindow : Window, IDisposable
 
     public ConfigWindow() : base(Strings.ConfigWindow_Title, ImGuiWindowFlags.AlwaysAutoResize)
     {
-        conf = Config;
+        conf = NecroLens.Config;
     }
 
     public void Dispose() { }
@@ -65,7 +65,7 @@ public class ConfigWindow : Window, IDisposable
             {
                 conf.UniqueId = Guid.NewGuid().ToString();
             }
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Indent(15);
@@ -80,7 +80,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ExtrasTab_ShowDebugInformation, ref showDebugInformation))
         {
             conf.ShowDebugInformation = showDebugInformation;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Indent(15);
@@ -95,7 +95,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ChestsTab_OpenChests, ref openChests))
         {
             conf.OpenChests = openChests;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.SameLine();
@@ -112,7 +112,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ChestsTab_OpenFollowingChests_Bronze, ref openBronzeCoffers))
         {
             conf.OpenBronzeCoffers = openBronzeCoffers;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.SameLine();
@@ -120,7 +120,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ChestsTab_OpenFollowingChests_Silver, ref openSilverCoffers))
         {
             conf.OpenSilverCoffers = openSilverCoffers;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.SameLine();
@@ -128,7 +128,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ChestsTab_OpenFollowingChests_Gold, ref openGoldCoffers))
         {
             conf.OpenGoldCoffers = openGoldCoffers;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.SameLine();
@@ -136,7 +136,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ChestsTab_OpenFollowingChests_Hoards, ref openHoards))
         {
             conf.OpenHoards = openHoards;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Unindent(15);
@@ -147,7 +147,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ChestsTab_OpenUnsafeChests, ref openUnsafeChests))
         {
             conf.OpenUnsafeChests = openUnsafeChests;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Indent(15);
@@ -170,7 +170,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ESPTab_ShowPlayerDot, ref showPlayerDot))
         {
             conf.ShowPlayerDot = showPlayerDot;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Indent(15);
@@ -184,7 +184,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ESPTab_ShowAggroRange, ref showMobViews))
         {
             conf.ShowMobViews = showMobViews;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Indent(15);
@@ -217,7 +217,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ESPTab_ShowPatrolArrow, ref showPatrolArrow))
         {
             conf.ShowPatrolArrow = showPatrolArrow;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Indent(15);
@@ -232,7 +232,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ESPTab_ShowCofferInteractionRange, ref showCofferInteractionRange))
         {
             conf.ShowCofferInteractionRange = showCofferInteractionRange;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Indent(15);
@@ -249,7 +249,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ESPTab_HighlightObjects_TreasureChests, ref highlightCoffers))
         {
             conf.HighlightCoffers = highlightCoffers;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         var passageColor = ImGui.ColorConvertU32ToFloat4(conf.PassageColor).WithoutAlpha();
@@ -264,7 +264,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ESPTab_HighlightObjects_Passage, ref highlightPassage))
         {
             conf.HighlightPassage = highlightPassage;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Unindent(15);
@@ -286,7 +286,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ESPTab_HighlightTreasureChests_Bronze, ref showBronzeCoffers))
         {
             conf.ShowBronzeCoffers = showBronzeCoffers;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         var silverCofferColor = ImGui.ColorConvertU32ToFloat4(conf.SilverCofferColor).WithoutAlpha();
@@ -301,7 +301,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ESPTab_HighlightTreasureChests_Silver, ref showSilverCoffers))
         {
             conf.ShowSilverCoffers = showSilverCoffers;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         var goldCofferColor = ImGui.ColorConvertU32ToFloat4(conf.GoldCofferColor).WithoutAlpha();
@@ -316,7 +316,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ESPTab_HighlightTreasureChests_Gold, ref showGoldCoffers))
         {
             conf.ShowGoldCoffers = showGoldCoffers;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         var hoardColor = ImGui.ColorConvertU32ToFloat4(conf.HoardColor).WithoutAlpha();
@@ -331,7 +331,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_ESPTab_HighlightTreasureChests_Hoards, ref showHoards))
         {
             conf.ShowHoards = showHoards;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Unindent(15);
@@ -344,7 +344,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_GeneralTab_AutomaticallyOpen, ref autoOpen))
         {
             conf.AutoOpenOnEnter = autoOpen;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Indent(15);
@@ -356,7 +356,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_GeneralTab_EnableOverlay, ref enableEsp))
         {
             conf.EnableESP = enableEsp;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Indent(15);
@@ -368,7 +368,7 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Strings.ConfigWindow_GeneralTab_OpenChests, ref openChests))
         {
             conf.OpenChests = openChests;
-            Config.Save();
+            NecroLens.Config.Save();
         }
 
         ImGui.Indent(15);

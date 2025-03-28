@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Dalamud.Game.Text;
@@ -13,17 +13,17 @@ namespace NecroLens.util;
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 public static class DeepDungeonUtil
 {
-    public static ushort MapId => ClientState.TerritoryType;
+    public static ushort MapId => NecroLens.ClientState?.TerritoryType ?? 0;
     public static bool InDeepDungeon => InPotD || InHoH || InEO;
     public static bool InPotD => DataIds.PalaceOfTheDeadMapIds.Contains(MapId);
     public static bool InHoH => DataIds.HeavenOnHighMapIds.Contains(MapId);
     public static bool InEO => DataIds.EurekaOrthosMapIds.Contains(MapId);
-    
+
     public static bool IsPomanderUsable(Pomander pomander)
     {
         // Only in Deep Dungeon of course :D
         var usable = InDeepDungeon;
-        
+
         if (!usable)
         {
             PrintChatMessage($"Can only be used in DeepDungeon");
@@ -33,10 +33,10 @@ public static class DeepDungeonUtil
         // checking for item penalty if not serenity
         if (pomander != Pomander.Serenity && pomander != Pomander.SerenityProtomander)
         {
-            var itemPenalty = Player.Status.Where(s => s.StatusId == DataIds.ItemPenaltyStatusId);
-            usable = usable && !itemPenalty.Any();
+            var itemPenalty = Player.Status?.Where(s => s.StatusId == DataIds.ItemPenaltyStatusId);
+            usable = usable && (itemPenalty == null || !itemPenalty.Any());
         }
-        
+
         if (!usable)
         {
             PrintChatMessage($"Unable to use: Item Penalty active");
@@ -59,7 +59,7 @@ public static class DeepDungeonUtil
 
             _ => false
         };
-        
+
         if (!usable)
         {
             PrintChatMessage($"Unable to use: Pomander not usable in current Deep Dungeon");
@@ -72,13 +72,19 @@ public static class DeepDungeonUtil
     public static bool TryFindPomanderByName(string name, out Pomander pomander)
     {
         pomander = default;
-        if (name.IsNullOrEmpty())
+        if (string.IsNullOrEmpty(name))
         {
             PrintChatMessage($"Define a pomander name like '/pomander Safety' or even a part of the name like '/pomander saf'");
             return false;
         }
-        
-        var sheet = DataManager.GetExcelSheet<Lumina.Excel.Sheets.DeepDungeonItem>()!;
+
+        var sheet = NecroLens.DataManager.GetExcelSheet<Lumina.Excel.Sheets.DeepDungeonItem>();
+        if (sheet == null)
+        {
+            PrintChatMessage($"Failed to retrieve DeepDungeonItem sheet.");
+            return false;
+        }
+
         var matches = sheet.Where(e => e.RowId is > 0 and < 23)
                            .Where(e => e.Singular.ToString().Contains(name, StringComparison.OrdinalIgnoreCase))
                            .ToList();
@@ -117,7 +123,6 @@ public static class DeepDungeonUtil
         return pomander != default;
     }
 
-
     public static void PrintChatMessage(string msg)
     {
         var message = new XivChatEntry
@@ -127,6 +132,6 @@ public static class DeepDungeonUtil
                       .Append(msg).Build()
         };
 
-        Svc.Chat.Print(message);
+        Svc.Chat?.Print(message);
     }
 }

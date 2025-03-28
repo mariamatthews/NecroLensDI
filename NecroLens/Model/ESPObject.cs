@@ -1,11 +1,13 @@
-﻿using System;
+using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Linq;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
+using ECommons.Logging;
 using NecroLens.Data;
+using NecroLens.Service;
 using NecroLens.util;
 
 namespace NecroLens.Model;
@@ -45,12 +47,10 @@ public class ESPObject
         Passage
     }
 
-    private IClientState clientState;
     private MobInfo? mobInfo;
 
     public ESPObject(IGameObject gameObject, MobInfo? mobInfo = null)
     {
-        this.clientState = ClientState;
         ContainingPomander = null;
         GameObject = gameObject;
         this.mobInfo = mobInfo;
@@ -59,7 +59,7 @@ public class ESPObject
         if (this.mobInfo != null)
         {
             if (DeepDungeonContentInfo.ContentMobInfoChanges.TryGetValue(
-                    DungeonService.CurrentContentId, out var overrideInfos))
+                    NecroLens.DeepDungeonService.CurrentContentId, out var overrideInfos))
             {
                 var npc = (IBattleNpc)gameObject;
                 var mob = overrideInfos.FirstOrDefault(m => m.Id == npc.NameId);
@@ -76,7 +76,7 @@ public class ESPObject
         {
             var dataId = gameObject.DataId;
 
-            if (clientState.LocalPlayer != null && clientState.LocalPlayer.EntityId == gameObject.EntityId)
+            if (NecroLens.ClientState.LocalPlayer != null && NecroLens.ClientState.LocalPlayer.EntityId == gameObject.EntityId)
                 Type = ESPType.Player;
             else if (DataIds.BronzeChestIDs.Contains(dataId))
                 Type = ESPType.BronzeChest;
@@ -102,7 +102,7 @@ public class ESPObject
                 Type = ESPType.Mimic;
         }
     }
-    
+
     public Pomander? ContainingPomander { get; set; }
 
     public IGameObject GameObject { get; }
@@ -167,7 +167,7 @@ public class ESPObject
 
     public float Distance()
     {
-        return clientState.LocalPlayer != null ? GameObject.Position.Distance2D(clientState.LocalPlayer.Position) : 0;
+        return NecroLens.ClientState.LocalPlayer != null ? GameObject.Position.Distance2D(NecroLens.ClientState.LocalPlayer.Position) : 0;
     }
 
     public bool IsChest()
@@ -195,16 +195,16 @@ public class ESPObject
             case ESPType.Return:
                 return Color.LightBlue.ToUint();
             case ESPType.Passage:
-                return Config.PassageColor;
+                return NecroLens.Config.PassageColor;
             case ESPType.AccursedHoard:
             case ESPType.AccursedHoardCoffer:
-                return Config.HoardColor;
+                return NecroLens.Config.HoardColor;
             case ESPType.GoldChest:
-                return Config.GoldCofferColor;
+                return NecroLens.Config.GoldCofferColor;
             case ESPType.SilverChest:
-                return Config.SilverCofferColor;
+                return NecroLens.Config.SilverCofferColor;
             case ESPType.BronzeChest:
-                return Config.BronzeCofferColor;
+                return NecroLens.Config.BronzeCofferColor;
             default:
                 return Color.White.ToUint();
         }
@@ -214,7 +214,27 @@ public class ESPObject
     {
         try
         {
-            return GameObject is IBattleNpc npc && (npc.StatusFlags & StatusFlags.InCombat) != 0;
+            // Only proceed if GameObject is valid and is actually a BattleNpc
+            if (GameObject is IBattleNpc npc && GameObject.IsValid())
+            {
+                // Additional null check and validation before accessing StatusFlags
+                if (npc is ICharacter character)
+                {
+                    // Safer way to access StatusFlags
+                    try
+                    {
+                        return (character.StatusFlags & StatusFlags.InCombat) != 0;
+                    }
+                    catch
+                    {
+                        // If StatusFlags access fails, we'll assume not in combat
+                        // to prevent crashes
+                        return false;
+                    }
+                }
+                return false;
+            }
+            return false;
         }
         catch (AccessViolationException)
         {
@@ -222,7 +242,13 @@ public class ESPObject
             // we ignore them and assume "yes" here to disable rendering
             return true;
         }
+        catch (Exception e)
+        {
+            NecroLens.PluginLog.Error($"Error in InCombat check: {e}");
+            return false;
+        }
     }
+
 
     public string? NameSymbol()
     {
@@ -277,7 +303,7 @@ public class ESPObject
         };
 
 
-        if (Config.ShowDebugInformation)
+        if (NecroLens.Config.ShowDebugInformation)
         {
             name += "\nD:" + GameObject.DataId;
             if (GameObject is IBattleNpc npc2) name += " N:" + npc2.NameId;
@@ -286,3 +312,4 @@ public class ESPObject
         return name;
     }
 }
+

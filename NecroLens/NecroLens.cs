@@ -1,15 +1,19 @@
-﻿#undef DEBUG
+#undef DEBUG
 
 
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Threading;
 using Dalamud.Game;
 using Dalamud.Interface.Windowing;
+using Dalamud.IoC;
 using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
 using ECommons;
 using NecroLens.Model;
 using NecroLens.Service;
 using NecroLens.Windows;
+using ECommons.DalamudServices; // Ensure this is referenced
 
 namespace NecroLens;
 
@@ -18,49 +22,68 @@ namespace NecroLens;
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 public sealed class NecroLens : IDalamudPlugin
 {
-    private readonly ConfigWindow configWindow;
-    private readonly DeepDungeonService deepDungeonService;
-    private readonly ESPService espService;
-    private readonly MainWindow mainWindow;
-    private readonly MobInfoService mobInfoService;
-    private readonly PluginCommands pluginCommands;
+    // 1) Dalamud services
+    [PluginService] public static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
+    [PluginService] public static IClientState ClientState { get; private set; } = null!;
+    [PluginService] public static ICondition Condition { get; private set; } = null!;
+    [PluginService] public static ICommandManager CommandManager { get; private set; } = null!;
+    [PluginService] public static IDataManager DataManager { get; private set; } = null!;
+    [PluginService] public static IFramework Framework { get; private set; } = null!;
+    [PluginService] public static IGameGui GameGui { get; private set; } = null!;
+    [PluginService] public static IPluginLog PluginLog { get; private set; } = null!;
+    [PluginService] public static IObjectTable ObjectTable { get; private set; } = null!;
+    [PluginService] public static IChatGui ChatGui { get; private set; } = null!;
+    [PluginService] public static IPartyList PartyList { get; private set; } = null!;
+    [PluginService] public static IGameNetwork GameNetwork { get; private set; } = null!;
+
+
+
+    // ...and any other IPartyList, ITargetManager, etc. you need.
+
+    // 2) Your custom services or references
+    public static Configuration Config { get; private set; } = null!;
+    public static PluginCommands PluginCommands { get; private set; } = null!;
+    public static DeepDungeonService DeepDungeonService { get; private set; } = null!;
+    public static MobInfoService MobService { get; private set; } = null!;
+    public static ESPService ESPService { get; private set; } = null!;
+    public static ConfigWindow ConfigWindow { get; private set; } = null!;
+    public static MainWindow MainWindow { get; private set; } = null!;
+
 
     public readonly WindowSystem WindowSystem = new("NecroLens");
 
-#if DEBUG
-    private readonly ESPTestService espTestService;
-#endif
-
-    public NecroLens(IDalamudPluginInterface? pluginInterface)
+    public NecroLens(IDalamudPluginInterface? PluginInterface)
     {
-        pluginInterface?.Create<PluginService>();
-        Plugin = this;
+        //Plugin = this;
 
-        ECommonsMain.Init(pluginInterface, this, Module.DalamudReflector);
+        ECommonsMain.Init(PluginInterface, this, Module.DalamudReflector);
 
-        Config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        // Load NecroLens.Config
+        NecroLens.Config = NecroLens.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        // CommandManager = new ICommandManager(); // Remove this line
 
-        pluginCommands = new PluginCommands();
-        configWindow = new ConfigWindow();
-        mainWindow = new MainWindow();
+        // Initialize custom services once:
+        MobService = new MobInfoService();
+        DeepDungeonService = new DeepDungeonService();
+        //GameNetwork = new GameNetwork();
 
-        WindowSystem.AddWindow(mainWindow);
-        WindowSystem.AddWindow(configWindow);
+        // Initialize other parts (windows, commands, etc.)
+        PluginCommands = new PluginCommands();
+        ConfigWindow = new ConfigWindow();
+        MainWindow = new MainWindow();
 
-        mobInfoService = new MobInfoService();
-        MobService = mobInfoService;
+        WindowSystem.AddWindow(MainWindow);
+        WindowSystem.AddWindow(ConfigWindow);
 
-        espService = new ESPService();
-
-        deepDungeonService = new DeepDungeonService();
-        DungeonService = deepDungeonService;
+        // Initialize ESP service
+        ESPService = new ESPService();
 #if DEBUG
         espTestService = new ESPTestService();
 #endif
-        PluginInterface.UiBuilder.Draw += DrawUI;
-        PluginInterface.UiBuilder.OpenConfigUi += ShowConfigWindow;
+        NecroLens.PluginInterface.UiBuilder.Draw += DrawUI;
+        NecroLens.PluginInterface.UiBuilder.OpenConfigUi += ShowConfigWindow;
 
-        CultureInfo.DefaultThreadCurrentUICulture = ClientState.ClientLanguage switch
+        CultureInfo.DefaultThreadCurrentUICulture = NecroLens.ClientState.ClientLanguage switch
         {
             ClientLanguage.French => CultureInfo.GetCultureInfo("fr"),
             ClientLanguage.German => CultureInfo.GetCultureInfo("de"),
@@ -73,18 +96,18 @@ public sealed class NecroLens : IDalamudPlugin
     {
         WindowSystem.RemoveAllWindows();
 
-        PluginInterface.UiBuilder.Draw -= DrawUI;
-        PluginInterface.UiBuilder.OpenConfigUi -= ShowConfigWindow;
+        NecroLens.PluginInterface.UiBuilder.Draw -= DrawUI;
+        NecroLens.PluginInterface.UiBuilder.OpenConfigUi -= ShowConfigWindow;
 
-        configWindow.Dispose();
-        pluginCommands.Dispose();
-        mainWindow.Dispose();
-        espService.Dispose();
-        deepDungeonService.Dispose();
+        ConfigWindow.Dispose();
+        PluginCommands.Dispose();
+        MainWindow.Dispose();
+        ESPService.Dispose();
+        DeepDungeonService.Dispose();
 #if DEBUG
         espTestService.Dispose();
 #endif
-        mobInfoService.Dispose();
+        MobService.Dispose();
         
         ECommonsMain.Dispose();
     }
@@ -94,18 +117,18 @@ public sealed class NecroLens : IDalamudPlugin
         WindowSystem.Draw();
     }
 
-    public void ShowMainWindow()
+    public static void ShowMainWindow()
     {
-        mainWindow.IsOpen = true;
+        MainWindow.IsOpen = true;
     }
 
-    public void CloseMainWindow()
+    public static void CloseMainWindow()
     {
-        mainWindow.IsOpen = false;
+        MainWindow.IsOpen = false;
     }
 
-    public void ShowConfigWindow()
+    public static void ShowConfigWindow()
     {
-        configWindow.IsOpen = true;
+        ConfigWindow.IsOpen = true;
     }
 }

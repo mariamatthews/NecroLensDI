@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 
 namespace NecroLens.Model;
 
@@ -9,9 +9,10 @@ public class DataCollector
     public string? Sender { get; set; }
     
     public string? Party { get; set; }
-    
-    public Collection<MobData> Data { get; set; }
-    
+
+    public Collection<MobData> Data { get; set; } = new Collection<MobData>();
+
+
     public class MobData
     {
         public uint DataId { get; set; }
