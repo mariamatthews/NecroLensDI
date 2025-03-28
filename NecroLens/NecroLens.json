@@ -1,9 +1,9 @@
 {
-    "Author": "Jukka",
-    "Name": "NecroLens",
-    "Punchline": "A true Necromancer always know the DeepDungeon ... everyone else just uses a high tech!",
-    "Description": "DeepDungeon Helper. Radar for Mobs, Aggro, Sight and everything else.",
-    "InternalName": "NecroLens",
+    "Author": "mariamatthews",
+    "Name": "NecroLensDI",
+    "Punchline": "Enhanced DeepDungeon Helper with ESP features, optimized using Dependency Injection",
+    "Description": "DeepDungeon mastery powered by Dependency Injection!",
+    "InternalName": "NecroLensDI",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 12,
     "Tags": [
@@ -16,6 +16,6 @@
         "deep",
         "dungeon"
     ],
-    "RepoUrl": "https://github.com/Jukkales/NecroLens",
-    "IconUrl": "https://github.com/Jukkales/NecroLens/raw/main/icon.png"
+    "RepoUrl": "https://github.com/mariamatthews/NecroLensDI",
+    "IconUrl": "https://github.com/mariamatthews/NecroLensDI/raw/main/icon.png"
 }

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <Authors>Jukka</Authors>
-        <Version>0.0.0.0</Version>
-        <Description>NecroLens Dalamud Plugin</Description>
-        <PackageProjectUrl>https://github.com/Jukkales/NecroLens</PackageProjectUrl>
+        <Authors>mariamatthews</Authors>
+        <Version>1.0.7.3</Version>
+        <Description>Enhanced NecroLens plugin with Dependency Injection for Dalamud.</Description>
+        <PackageProjectUrl>https://github.com/mariamatthews/NecroLensDI</PackageProjectUrl>
     </PropertyGroup>
 
     <PropertyGroup>
