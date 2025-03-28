@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
+        <OutputType>Library</OutputType>
+        <AssemblyName>NecroLensDI</AssemblyName>
         <Authors>mariamatthews</Authors>
         <Version>1.7.2.0</Version>
         <Description>Enhanced NecroLens plugin with Dependency Injection for Dalamud.</Description>
