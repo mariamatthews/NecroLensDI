@@ -40,10 +40,8 @@ public partial class FloorDetails
     public FloorDetails(ILoggingService logger, Configuration configuration, IGameGui gameGui)
     {
         this.logger = logger;
-        //logger.LogInformation($"Initializing: ,  {nameof(FloorDetails)}");
         this.configuration = configuration;
         this.gameGui = gameGui;
-        //RespawnTime = configuration.RespawnTime;
     }
 
     [GeneratedRegex("\\d+")]
@@ -66,7 +64,7 @@ public partial class FloorDetails
     {
         if (FloorTransfer)
         {
-            logger.LogDebug($"NextFloor: {CurrentFloor + 1}");
+            logger.LogInformation($"NextFloor: {CurrentFloor + 1}");
 
             // Reset
             InteractionList.Clear();
@@ -123,7 +121,7 @@ public partial class FloorDetails
 
     public void OnPomanderUsed(Pomander pomander)
     {
-        logger.LogDebug($"Pomander ID: {pomander}");
+        logger.LogInformation($"Pomander ID: {pomander}");
 
         if (InEO)
         {
@@ -242,7 +240,6 @@ public partial class FloorDetails
                                                    {
                                                        NullValueHandling = NullValueHandling.Ignore
                                                    });
-            logger.LogDebug("Sending Data: \n" + json);
 
             Task.Factory.StartNew(async () =>
             {
@@ -254,7 +251,7 @@ public partial class FloorDetails
                 }
                 catch (Exception e)
                 {
-                    logger.LogDebug($"Failed to send data to server: {e.Message}");
+                    logger.LogError($"Failed to send data to server: {e.Message}");
                 }
             });
         }

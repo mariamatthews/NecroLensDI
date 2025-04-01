@@ -6,6 +6,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Windowing;
 using ImGuiNET;
+using Lumina;
 using NecroLens.Data;
 using NecroLens.Interface;
 using NecroLens.Model;
@@ -18,14 +19,19 @@ public class MainWindow : Window, IDisposable
 {
     private readonly Configuration configuration;
     private readonly IMainUIManager mainUIManager;
+    private readonly ILoggingService logger;
+    private readonly DeepDungeonService deepDungeonService;
 
-    public MainWindow(NecroLens plugin) : base("NecroLens",
+    public MainWindow(ILoggingService logger, Configuration configuration, DeepDungeonService deepDungeonService, NecroLens plugin) : base("NecroLens",
                                ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
                                ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize |
                                ImGuiWindowFlags.NoFocusOnAppearing)
     {
-        configuration = plugin.Configuration;
+        this.configuration = configuration;
+        this.logger = logger;
         mainUIManager = plugin;
+        this.deepDungeonService = deepDungeonService;
+
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -57,12 +63,14 @@ public class MainWindow : Window, IDisposable
 
     public override bool DrawConditions()
     {
-        return DeepDungeonUtil.InDeepDungeon && NecroLens.DeepDungeonService.Ready;
+        var inDeepDungeon = DeepDungeonUtil.InDeepDungeon;
+        var deepDungeonServiceReady = deepDungeonService.Ready;
+        return inDeepDungeon && deepDungeonServiceReady;
     }
 
     private void DrawTrapStatus()
     {
-        var status = NecroLens.DeepDungeonService.FloorDetails.TrapStatus();
+        var status = deepDungeonService.FloorDetails.TrapStatus();
 
         ImGui.Text(Strings.MainWindow_TrapStatus_Title);
         ImGui.SameLine();
@@ -83,7 +91,7 @@ public class MainWindow : Window, IDisposable
 
     private void DrawPassageStatus()
     {
-        var progress = NecroLens.DeepDungeonService.FloorDetails.PassageProgress();
+        var progress = deepDungeonService.FloorDetails.PassageProgress();
         ImGui.Text(Strings.MainWindow_PassageStatus_Title);
         ImGui.SameLine();
         if (progress == 100)
@@ -101,13 +109,13 @@ public class MainWindow : Window, IDisposable
         }
     }
 
-    private static void DrawTimeSetLine(int floor, int time)
+    private void DrawTimeSetLine(int floor, int time)
     {
         ImGui.Text(floor.ToString("000:"));
         ImGui.SameLine();
         var text = FormatTime(time);
         var color = time <= 0 ? Color.DimGray.ToV4() : Color.White.ToV4();
-        ImGui.TextColored(NecroLens.DeepDungeonService.FloorDetails.CurrentFloor == floor ? Color.Yellow.ToV4() : color, text);
+        ImGui.TextColored(deepDungeonService.FloorDetails.CurrentFloor == floor ? Color.Yellow.ToV4() : color, text);
     }
 
     private void DrawTimeSet()
@@ -115,18 +123,18 @@ public class MainWindow : Window, IDisposable
         ImGui.BeginGroup();
         ImGui.Text(Strings.MainWindow_TimeSet_Title);
 
-        var first = NecroLens.DeepDungeonService.FloorTimes.Take(5);
+        var first = deepDungeonService.FloorTimes.Take(5);
         ImGui.BeginGroup();
         foreach (var floor in first)
-            DrawTimeSetLine(floor.Key, floor.Value);
+            this.DrawTimeSetLine(floor.Key, floor.Value);
 
         ImGui.EndGroup();
         ImGui.SameLine(100);
 
-        var second = NecroLens.DeepDungeonService.FloorTimes.Skip(5).Take(5);
+        var second = deepDungeonService.FloorTimes.Skip(5).Take(5);
         ImGui.BeginGroup();
         foreach (var floor in second)
-            DrawTimeSetLine(floor.Key, floor.Value);
+            this.DrawTimeSetLine(floor.Key, floor.Value);
 
         ImGui.EndGroup();
 
@@ -149,7 +157,7 @@ public class MainWindow : Window, IDisposable
 
     private void DrawCurrentFloorEffects()
     {
-        var effects = NecroLens.DeepDungeonService.FloorDetails.GetFloorEffects();
+        var effects = deepDungeonService.FloorDetails.GetFloorEffects();
         var colorWhite = Color.White.ToV4();
         var colorGrey = Color.DimGray.ToV4();
         ImGui.BeginGroup();
@@ -157,17 +165,17 @@ public class MainWindow : Window, IDisposable
         ImGui.Indent(15);
         ImGui.TextColored(effects.Contains(Pomander.Affluence) ? colorWhite : colorGrey,
                           Strings.MainWindow_CurrentFloorEffects_Affluence);
-        if (NecroLens.DeepDungeonService.FloorDetails.IsNextFloorWith(Pomander.Affluence))
+        if (deepDungeonService.FloorDetails.IsNextFloorWith(Pomander.Affluence))
             DrawNextFloorMark();
 
         ImGui.TextColored(effects.Contains(Pomander.Flight) ? colorWhite : colorGrey,
                           Strings.MainWindow_CurrentFloorEffects_Flight);
-        if (NecroLens.DeepDungeonService.FloorDetails.IsNextFloorWith(Pomander.Flight))
+        if (deepDungeonService.FloorDetails.IsNextFloorWith(Pomander.Flight))
             DrawNextFloorMark();
 
         ImGui.TextColored(effects.Contains(Pomander.Alteration) ? colorWhite : colorGrey,
                           Strings.MainWindow_CurrentFloorEffects_Alteration);
-        if (NecroLens.DeepDungeonService.FloorDetails.IsNextFloorWith(Pomander.Alteration))
+        if (deepDungeonService.FloorDetails.IsNextFloorWith(Pomander.Alteration))
             DrawNextFloorMark();
 
         ImGui.TextColored(effects.Contains(Pomander.Safety) ? colorWhite : colorGrey,
@@ -182,13 +190,13 @@ public class MainWindow : Window, IDisposable
     public override void Draw()
     {
         ImGui.BeginGroup();
-        ImGui.Text(string.Format(Strings.MainWindow_Floor, NecroLens.DeepDungeonService.FloorDetails.CurrentFloor));
+        ImGui.Text(string.Format(Strings.MainWindow_Floor, deepDungeonService.FloorDetails.CurrentFloor));
 
-        if (NecroLens.DeepDungeonService.FloorDetails.HasRespawn())
+        if (deepDungeonService.FloorDetails.HasRespawn())
         {
             ImGui.SameLine(80);
             ImGui.Text(string.Format(Strings.MainWindow_Respawns,
-                                     FormatTime(NecroLens.DeepDungeonService.FloorDetails.TimeTillRespawn())));
+                                     FormatTime(deepDungeonService.FloorDetails.TimeTillRespawn())));
         }
 
         ImGui.Spacing();
@@ -224,7 +232,7 @@ public class MainWindow : Window, IDisposable
 
         ImGui.SameLine();
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetColumnWidth() - 20);
-        if (ImGuiComponents.IconButton(FontAwesomeIcon.Toolbox)) NecroLens.DeepDungeonService.TryNearestOpenChest();
+        if (ImGuiComponents.IconButton(FontAwesomeIcon.Toolbox)) deepDungeonService.TryNearestOpenChest();
         if (ImGui.IsItemHovered())
         {
             ImGui.BeginTooltip();

@@ -174,7 +174,7 @@ public class ESPObject
 
         if (character.Address == IntPtr.Zero)
         {
-            logger.LogDebug($"{operationName}: character.Address is zero.");
+            logger.LogWarning($"{operationName}: character.Address is zero.");
             return defaultValue;
         }
 

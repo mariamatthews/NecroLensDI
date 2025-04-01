@@ -30,7 +30,6 @@ public class ESPTestService : IDisposable
         this.gameGui = gameGui;
         this.logger = logger;
 
-        //logger.LogInformation($"Initializing: ,  {nameof(ESPTestService)}");
         NecroLens.PluginInterface.UiBuilder.Draw += OnDraw;
 
     }
@@ -39,7 +38,6 @@ public class ESPTestService : IDisposable
     {
         NecroLens.PluginInterface.UiBuilder.Draw -= OnDraw;
         deepDungeonService?.Dispose();
-        //logger?.LogInformation($"Disposing: {nameof(ESPTestService)}");
         GC.SuppressFinalize(this);
     }
 
@@ -54,12 +52,6 @@ public class ESPTestService : IDisposable
             var onScreen = gameGui.WorldToScreen(player!.Position, out _);
             if (onScreen)
             {
-                //drawList.AddCircleFilled(position2D, 3f, ColorUtils.ToUint(Color.Red, 0.8f), 100);
-
-                // drawList.PathArcTo(position2D, 2f, 2f, 2f);
-                // drawList.PathStroke(ColorUtils.ToUint(Color.Red, 0.8f), ImDrawFlags.RoundCornersDefault, 2f);
-                // drawList.PathClear();
-
                 ESPUtils.DrawFacingDirectionArrow(drawList, espObject, Color.Red.ToUint(), 1f, 4f);
             }
         }

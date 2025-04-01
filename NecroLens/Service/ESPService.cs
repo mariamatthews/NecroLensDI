@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using SystemTask = System.Threading.Tasks.Task;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -27,7 +26,6 @@ public class ESPService : IDisposable
     private readonly IGameGui gameGui;
 
     private readonly List<ESPObject> mapObjects = new List<ESPObject>();
-    private readonly SystemTask mapScanner;
 
     public ESPService(ILoggingService logger,
         Configuration configuration,
@@ -39,33 +37,24 @@ public class ESPService : IDisposable
         IMobInfoService mobInfoService,
         IGameGui gameGui)
     {
-        try
-        {
-            this.logger = logger;
-            logger.LogDebug("ESP Service loading...");
-            this.clientState = clientState;
-            this.objectTable = objectTable;
-            this.deepDungeonService = deepDungeonService;
-            this.configuration = configuration;
-            this.framework = framework;
-            this.mobInfoService = mobInfoService;
-            this.gameGui = gameGui;
 
-            //NecroLens.PluginInterface.UiBuilder.Draw += OnDraw;
-        }
-        catch (Exception e)
-        {
-            logger.LogError(e.ToString());
-        }
+        this.logger = logger;
+        logger.LogInformation("ESP Service loading...");
+        this.clientState = clientState;
+        this.objectTable = objectTable;
+        this.deepDungeonService = deepDungeonService;
+        this.configuration = configuration;
+        this.framework = framework;
+        this.mobInfoService = mobInfoService;
+        this.gameGui = gameGui;
+
     }
 
     public void Dispose()
     {
         try
         {
-            NecroLens.PluginInterface.UiBuilder.Draw -= OnDraw;
             clientState.TerritoryChanged -= OnCleanup;
-            while (!mapScanner.IsCompleted) logger.LogDebug("wait till scanner is stopped...");
             mapObjects.Clear();
 
             // Dispose of the services
@@ -110,15 +99,11 @@ public class ESPService : IDisposable
     {
         try
         {
-            // Always draw every frame:
             if (ShouldDraw())
             {
                 lock (mapObjects)
                 {
-                    // For debugging
-                    // logger.LogVerbose($"OnDraw(): Rendering {mapObjects.Count} objects.");
-
-                    var drawList = ImGui.GetBackgroundDrawList();
+                    var drawList = ImGui.GetBackgroundDrawList(ImGui.GetMainViewport());
                     foreach (var gameObject in mapObjects)
                     {
                         DrawEspObject(drawList, gameObject);
@@ -134,7 +119,7 @@ public class ESPService : IDisposable
 
     private bool DoDrawName(ESPObject espObject, bool inCombat)
     {
-        return espObject.Type switch
+        var result = espObject.Type switch
         {
             ESPObject.ESPType.Player => false,
             ESPObject.ESPType.Enemy => !inCombat,
@@ -150,6 +135,8 @@ public class ESPService : IDisposable
             ESPObject.ESPType.Passage => configuration.ShowPassage,
             _ => false
         };
+
+        return result;
     }
 
     /**
@@ -182,7 +169,9 @@ public class ESPService : IDisposable
 
             // Pass the cached inCombat value to DoDrawName.
             if (DoDrawName(espObject, inCombat))
+            {
                 DrawName(drawList, espObject, position2D, deepDungeonService);
+            }
 
             // Continue drawing based on type and distance...
             if (espObject.Type == ESPObject.ESPType.AccursedHoard
@@ -270,15 +259,12 @@ public class ESPService : IDisposable
 
     public void DoMapScan()
     {
-        // If your existing “ShouldDraw()” is also in ESPService, just call it:
         if (!ShouldDraw())
         {
-            logger.LogDebug("DoMapScan(): ShouldDraw() returned false, skipping scan.");
             return;
         }
 
         var entityList = new List<ESPObject>();
-        logger.LogDebug($"DoMapScan(): Starting scan of objectTable (length={objectTable.Length}).");
 
         int count = 0;
         // The rest is basically your old scanning logic:
@@ -314,7 +300,6 @@ public class ESPService : IDisposable
             }
         }
 
-        logger.LogDebug($"DoMapScan(): Found {count} valid objects. Updating mapObjects list.");
         lock (mapObjects)
         {
             mapObjects.Clear();

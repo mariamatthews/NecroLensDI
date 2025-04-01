@@ -59,14 +59,14 @@ namespace NecroLens.Service
             IObjectTable objectTable,
             IGameGui gameGui)
         {
-            this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            this.configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
-            this.mainUIManager = mainUIManager ?? throw new ArgumentNullException(nameof(mainUIManager));
-            this.clientState = clientState ?? throw new ArgumentNullException(nameof(clientState));
-            this.mobService = mobService ?? throw new ArgumentNullException(nameof(mobService));
-            this.objectTable = objectTable ?? throw new ArgumentNullException(nameof(objectTable));
-            this.gameNetwork = gameNetwork ?? throw new ArgumentNullException(nameof(gameNetwork));
-            this.gameGui = gameGui ?? throw new ArgumentNullException(nameof(gameGui));
+            this.logger = logger;
+            this.configuration = configuration;
+            this.mainUIManager = mainUIManager;
+            this.clientState = clientState;
+            this.mobService = mobService;
+            this.objectTable = objectTable;
+            this.gameNetwork = gameNetwork;
+            this.gameGui = gameGui;
 
             gameNetwork.NetworkMessage += NetworkMessage;
 
@@ -98,7 +98,7 @@ namespace NecroLens.Service
         {
             FloorSetInfo = info;
             CurrentContentId = contentId;
-            logger.LogDebug($"Entering ContentID {CurrentContentId}");
+            logger.LogInformation($"Entering ContentID {CurrentContentId}");
 
             FloorTimes.Clear();
 
@@ -121,7 +121,7 @@ namespace NecroLens.Service
 
         private void ExitDeepDungeon()
         {
-            logger.LogDebug($"ContentID {CurrentContentId} - Exiting");
+            logger.LogInformation($"ContentID {CurrentContentId} - Exiting");
 
             FloorDetails.DumpFloorObjects(CurrentContentId);
 
@@ -137,7 +137,7 @@ namespace NecroLens.Service
         {
             if (!InDeepDungeon)
             {
-                logger.LogDebug("Failsafe exit");
+                logger.LogInformation("Failsafe exit");
                 ExitDeepDungeon();
             }
 

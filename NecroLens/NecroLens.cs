@@ -72,21 +72,20 @@ public sealed class NecroLens : IDalamudPlugin, IMainUIManager
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        ConfigWindow = new ConfigWindow(this);
-        MainWindow = new MainWindow(this);
+        // Initialize services
+        mobService = new MobInfoService(logger);
+        deepDungeonService = new DeepDungeonService(logger, Configuration, this, GameNetwork, DataManager, ClientState, mobService, ObjectTable, GameGui);
+        espService = new ESPService(logger, Configuration, this, ClientState, ObjectTable, deepDungeonService, Framework, mobService, GameGui);
+
+        // Initialize windows
+        ConfigWindow = new ConfigWindow(logger, Configuration);
+        MainWindow = new MainWindow(logger, Configuration, deepDungeonService, this);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(MainWindow);
-
-        //ECommonsMain.Init(PluginInterface, this, Module.DalamudReflector);
-
-        // Initialize ESP service
-        mobService = new MobInfoService(logger);
-        deepDungeonService = new DeepDungeonService(logger, Configuration, this, GameNetwork, DataManager, ClientState, mobService, ObjectTable, GameGui);
-        espService = new ESPService(logger, Configuration, this, ClientState, ObjectTable, deepDungeonService, Framework, mobService, GameGui );
-////#if DEBUG
-////        espTestService = new ESPTestService();
-////#endif
+#if DEBUG
+                espTestService = new ESPTestService();
+#endif
 
         PluginInterface.UiBuilder.Draw += espService.OnDraw;
         PluginInterface.UiBuilder.Draw += DrawUI;
@@ -139,9 +138,7 @@ public sealed class NecroLens : IDalamudPlugin, IMainUIManager
         if (DateTime.UtcNow - lastScanTime >= scanInterval)
         {
             lastScanTime = DateTime.UtcNow;
-            PluginLog.Debug("Calling DoMapScan()");
             espService.DoMapScan();
-            PluginLog.Debug("Finished DoMapScan()");
         }
     }
 
