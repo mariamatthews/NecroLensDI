@@ -2,7 +2,7 @@
 
 # NecroLensDI (Dependency Injection Fork)
 
-**NecroLensDI** enhances the original [NecroLens](https://github.com/Jukkales/NecroLens) plugin by implementing Dependency Injection (DI) for better modularity, maintainability, and testability. It is fully compatible with **game version 7.2**.
+**NecroLensDI** enhances the original [NecroLensDI](https://github.com/Jukkales/NecroLensDI) plugin by implementing Dependency Injection (DI) for better modularity, maintainability, and testability. It is fully compatible with **game version 7.2**.
 
 NecroLensDI allows you to explore Deep Dungeons (Palace of the Dead, Heaven on High, Eureka Orthos) with augmented reality-like visuals, providing enhanced spatial awareness and game information directly in your viewport.
 
@@ -48,7 +48,7 @@ NecroLensDI activates automatically in supported duties:
 An interface opens automatically when you enter these dungeons. If the interface closes accidentally, reopen it using:
 
 ```sh
-/necrolens
+/NecroLensDI
 ```
 
 ---
@@ -65,7 +65,7 @@ An interface opens automatically when you enter these dungeons. If the interface
 
 ### Acknowledgments
 
-This fork is based on the original [NecroLens](https://github.com/Jukkales/NecroLens) project by **Jukkales**. Special thanks to Leonhart for the original icon design.
+This fork is based on the original [NecroLensDI](https://github.com/Jukkales/NecroLensDI) project by **Jukkales**. Special thanks to Leonhart for the original icon design.
 
 All modifications focus on Dependency Injection and compatibility updates for game version 7.2.
 

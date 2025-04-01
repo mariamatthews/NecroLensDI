@@ -1,0 +1,21 @@
+{
+    "Author": "mariamatthews",
+    "Name": "NecroLensDI",
+    "Punchline": "Enhanced DeepDungeon Helper with ESP features, optimized using Dependency Injection",
+    "Description": "DeepDungeon mastery powered by Dependency Injection!",
+    "InternalName": "NecroLensDI",
+    "ApplicableVersion": "any",
+    "DalamudApiLevel": 12,
+    "Tags": [
+        "potd",
+        "hoh",
+        "eo",
+        "esp",
+        "radar",
+        "sonar",
+        "deep",
+        "dungeon"
+    ],
+    "RepoUrl": "https://github.com/mariamatthews/NecroLensDI",
+    "IconUrl": "https://github.com/mariamatthews/NecroLensDI/raw/main/icon.png"
+}
